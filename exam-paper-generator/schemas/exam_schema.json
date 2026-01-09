@@ -1,0 +1,488 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "exam-paper-schema-v1",
+  "title": "试卷数据格式规范",
+  "description": "用于描述试卷结构和内容的JSON Schema，支持多种题型和图例",
+  "type": "object",
+  "required": ["meta", "sections"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "description": "试卷元数据",
+      "required": ["subject", "total_score", "duration"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "试卷标题，如：2024年普通高中学业水平考试"
+        },
+        "subject": {
+          "type": "string",
+          "description": "科目名称，如：化学、数学、物理"
+        },
+        "school": {
+          "type": "string",
+          "description": "学校名称"
+        },
+        "semester": {
+          "type": "string",
+          "description": "学期，如：2024学年第一学期"
+        },
+        "duration": {
+          "type": "integer",
+          "description": "考试时长（分钟）",
+          "minimum": 1
+        },
+        "total_score": {
+          "type": "integer",
+          "description": "总分",
+          "minimum": 1
+        },
+        "difficulty_distribution": {
+          "type": "object",
+          "description": "难度分布",
+          "properties": {
+            "easy": { "type": "number", "description": "基础题占比" },
+            "medium": { "type": "number", "description": "中等题占比" },
+            "hard": { "type": "number", "description": "较难题占比" }
+          }
+        },
+        "notes": {
+          "type": "array",
+          "description": "考生须知",
+          "items": { "type": "string" }
+        },
+        "constants": {
+          "type": "object",
+          "description": "可能用到的常量，如相对原子质量",
+          "additionalProperties": { "type": ["string", "number"] }
+        }
+      }
+    },
+    "sections": {
+      "type": "array",
+      "description": "试卷各大题部分",
+      "items": { "$ref": "#/definitions/section" }
+    },
+    "answers": {
+      "type": "object",
+      "description": "参考答案（可选，也可以内嵌在每道题中）",
+      "$ref": "#/definitions/answer_sheet"
+    }
+  },
+  "definitions": {
+    "section": {
+      "type": "object",
+      "required": ["title", "type", "questions"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "大题标题，如：一、选择题（每小题2分，共30分）"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "multiple_choice",
+            "fill_blank",
+            "short_answer",
+            "calculation",
+            "essay",
+            "experiment",
+            "comprehensive"
+          ],
+          "description": "题型类型"
+        },
+        "total_points": {
+          "type": "number",
+          "description": "该部分总分"
+        },
+        "points_per_question": {
+          "type": "number",
+          "description": "每题分值（适用于分值相同的情况）"
+        },
+        "instructions": {
+          "type": "string",
+          "description": "答题说明，如：每小题只有一个选项符合题意"
+        },
+        "questions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/question" }
+        }
+      }
+    },
+    "question": {
+      "type": "object",
+      "required": ["number", "content"],
+      "properties": {
+        "number": {
+          "type": ["integer", "string"],
+          "description": "题号"
+        },
+        "content": {
+          "type": "string",
+          "description": "题干内容"
+        },
+        "content_continued": {
+          "type": "string",
+          "description": "题干续行（较长题目）"
+        },
+        "points": {
+          "type": "number",
+          "description": "本题分值"
+        },
+        "difficulty": {
+          "type": "string",
+          "enum": ["easy", "medium", "hard"],
+          "description": "难度等级"
+        },
+        "is_diagram_question": {
+          "type": "boolean",
+          "description": "是否为图例题",
+          "default": false
+        },
+        "diagram": {
+          "$ref": "#/definitions/diagram",
+          "description": "图例定义（如果有）"
+        },
+        "options": {
+          "type": "array",
+          "description": "选项（选择题）",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "description": "选项标签，如 A、B、C、D"
+              },
+              "content": { "type": "string", "description": "选项内容" }
+            }
+          }
+        },
+        "sub_questions": {
+          "type": "array",
+          "description": "小问（综合题）",
+          "items": { "$ref": "#/definitions/sub_question" }
+        },
+        "answer": {
+          "$ref": "#/definitions/answer",
+          "description": "答案（可内嵌）"
+        },
+        "answer_space": {
+          "type": "object",
+          "description": "答题空间",
+          "properties": {
+            "lines": { "type": "integer", "description": "空行数" },
+            "height_cm": { "type": "number", "description": "高度（厘米）" }
+          }
+        }
+      }
+    },
+    "sub_question": {
+      "type": "object",
+      "required": ["number", "content"],
+      "properties": {
+        "number": {
+          "type": ["integer", "string"],
+          "description": "小题号，如 (1)、(2)"
+        },
+        "content": {
+          "type": "string",
+          "description": "小问内容"
+        },
+        "points": {
+          "type": "number",
+          "description": "小问分值"
+        },
+        "is_diagram_question": {
+          "type": "boolean",
+          "description": "是否为图例题"
+        },
+        "diagram": {
+          "$ref": "#/definitions/diagram"
+        },
+        "options": {
+          "type": "array",
+          "description": "选项（如果是选择形式）",
+          "items": { "type": "string" }
+        },
+        "answer": {
+          "$ref": "#/definitions/answer"
+        }
+      }
+    },
+    "diagram": {
+      "type": "object",
+      "required": ["type"],
+      "description": "图例定义",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "atom_structure",
+            "molecular_structure",
+            "electron_formula",
+            "periodic_table",
+            "flowchart",
+            "experiment_setup",
+            "function_graph",
+            "coordinate_system",
+            "bar_chart",
+            "line_chart",
+            "pie_chart",
+            "circuit_diagram",
+            "force_diagram",
+            "geometry",
+            "custom_svg",
+            "custom_image"
+          ],
+          "description": "图例类型"
+        },
+        "title": {
+          "type": "string",
+          "description": "图例标题/说明"
+        },
+        "width_cm": {
+          "type": "number",
+          "description": "图例宽度（厘米）",
+          "default": 10
+        },
+        "height_cm": {
+          "type": "number",
+          "description": "图例高度（厘米）"
+        },
+        "position": {
+          "type": "string",
+          "enum": ["before_content", "after_content", "inline"],
+          "default": "after_content",
+          "description": "图例位置"
+        },
+        "spec": {
+          "type": "object",
+          "description": "图例具体参数，根据type不同而不同",
+          "additionalProperties": true
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "atom_structure" } } },
+          "then": {
+            "properties": {
+              "spec": {
+                "type": "object",
+                "properties": {
+                  "element": { "type": "string", "description": "元素符号" },
+                  "nucleus_charge": {
+                    "type": "integer",
+                    "description": "核电荷数"
+                  },
+                  "electron_shells": {
+                    "type": "array",
+                    "items": { "type": "integer" },
+                    "description": "各层电子数，如 [2, 8, 1]"
+                  },
+                  "show_label": { "type": "boolean", "default": true }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "flowchart" } } },
+          "then": {
+            "properties": {
+              "spec": {
+                "type": "object",
+                "properties": {
+                  "nodes": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string" },
+                        "label": { "type": "string" },
+                        "shape": {
+                          "type": "string",
+                          "enum": ["box", "diamond", "ellipse", "parallelogram"]
+                        }
+                      }
+                    }
+                  },
+                  "edges": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "from": { "type": "string" },
+                        "to": { "type": "string" },
+                        "label": { "type": "string" }
+                      }
+                    }
+                  },
+                  "direction": {
+                    "type": "string",
+                    "enum": ["LR", "TB"],
+                    "default": "LR"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "function_graph" } } },
+          "then": {
+            "properties": {
+              "spec": {
+                "type": "object",
+                "properties": {
+                  "functions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "expression": {
+                          "type": "string",
+                          "description": "函数表达式，如 x**2"
+                        },
+                        "label": { "type": "string" },
+                        "color": { "type": "string" }
+                      }
+                    }
+                  },
+                  "x_range": {
+                    "type": "array",
+                    "items": { "type": "number" },
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  "y_range": {
+                    "type": "array",
+                    "items": { "type": "number" },
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  "show_grid": { "type": "boolean", "default": true },
+                  "show_axes": { "type": "boolean", "default": true }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "bar_chart" } } },
+          "then": {
+            "properties": {
+              "spec": {
+                "type": "object",
+                "properties": {
+                  "data": { "type": "array", "items": { "type": "number" } },
+                  "labels": { "type": "array", "items": { "type": "string" } },
+                  "xlabel": { "type": "string" },
+                  "ylabel": { "type": "string" },
+                  "colors": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "experiment_setup" } } },
+          "then": {
+            "properties": {
+              "spec": {
+                "type": "object",
+                "properties": {
+                  "apparatus": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": { "type": "string" },
+                        "content": { "type": "string" },
+                        "position": { "type": "string" }
+                      }
+                    }
+                  },
+                  "connections": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "from": { "type": "string" },
+                        "to": { "type": "string" },
+                        "label": { "type": "string" }
+                      }
+                    }
+                  },
+                  "layout": {
+                    "type": "string",
+                    "enum": ["horizontal", "vertical"],
+                    "default": "horizontal"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "custom_svg" } } },
+          "then": {
+            "properties": {
+              "spec": {
+                "type": "object",
+                "properties": {
+                  "svg_content": { "type": "string", "description": "SVG代码" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "custom_image" } } },
+          "then": {
+            "properties": {
+              "spec": {
+                "type": "object",
+                "properties": {
+                  "image_path": { "type": "string", "description": "图片路径" },
+                  "image_url": { "type": "string", "description": "图片URL" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "answer": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string",
+          "description": "答案内容"
+        },
+        "explanation": {
+          "type": "string",
+          "description": "解析"
+        },
+        "scoring_criteria": {
+          "type": "array",
+          "description": "评分标准",
+          "items": {
+            "type": "object",
+            "properties": {
+              "point": { "type": "string", "description": "得分点" },
+              "score": { "type": "number", "description": "分值" }
+            }
+          }
+        }
+      }
+    },
+    "answer_sheet": {
+      "type": "object",
+      "description": "答案汇总",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "$ref": "#/definitions/answer" }
+      }
+    }
+  }
+}

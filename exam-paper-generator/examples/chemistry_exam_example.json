@@ -1,0 +1,310 @@
+{
+  "meta": {
+    "title": "2024年普通高中学业水平考试",
+    "subject": "化学",
+    "school": "",
+    "semester": "",
+    "duration": 90,
+    "total_score": 100,
+    "difficulty_distribution": {
+      "easy": 0.4,
+      "medium": 0.4,
+      "hard": 0.2
+    },
+    "notes": [
+      "本试卷分选择题和非选择题两部分，共8页，满分100分，考试时间90分钟。",
+      "考生答题前，务必将自己的姓名、准考证号用黑色字迹的签字笔或钢笔填写在答题纸上。",
+      "选择题的答案须用2B铅笔将答题纸上对应题目的答案标号涂黑，如要改动，须将原填涂处用橡皮擦净。",
+      "非选择题的答案须用黑色字迹的签字笔或钢笔写在答题纸上相应区域内，答案写在本试卷上无效。"
+    ],
+    "constants": {
+      "H": 1,
+      "C": 12,
+      "N": 14,
+      "O": 16,
+      "Na": 23,
+      "Mg": 24,
+      "Al": 27,
+      "S": 32,
+      "Cl": 35.5,
+      "K": 39,
+      "Ca": 40,
+      "Fe": 56,
+      "Cu": 64
+    }
+  },
+  "sections": [
+    {
+      "title": "一、选择题Ⅰ",
+      "type": "multiple_choice",
+      "total_points": 30,
+      "points_per_question": 2,
+      "instructions": "本题包括15小题，每小题2分，共30分。每小题只有一个选项符合题意",
+      "questions": [
+        {
+          "number": 1,
+          "content": "按物质的分类，NaOH属于",
+          "difficulty": "easy",
+          "options": [
+            { "label": "A", "content": "单质" },
+            { "label": "B", "content": "氧化物" },
+            { "label": "C", "content": "酸" },
+            { "label": "D", "content": "碱" }
+          ],
+          "answer": {
+            "content": "D",
+            "explanation": "NaOH由钠离子和氢氧根离子组成，属于碱类物质。"
+          }
+        },
+        {
+          "number": 2,
+          "content": "进行化学实验时，以下操作正确的是",
+          "difficulty": "easy",
+          "options": [
+            { "label": "A", "content": "用手接触药品" },
+            { "label": "B", "content": "将鼻孔凑到容器口闻气体气味" },
+            { "label": "C", "content": "取用液体药品后，将滴管平放在实验台上" },
+            { "label": "D", "content": "给试管加热时，先均匀加热再集中加热" }
+          ],
+          "answer": {
+            "content": "D",
+            "explanation": "给试管加热应先均匀预热，防止受热不均导致试管炸裂。"
+          }
+        },
+        {
+          "number": 10,
+          "content": "X、Y、Z三种短周期元素，原子序数依次增大，X和Z同主族，Y和Z同周期，X原子最外层电子数是其内层电子总数的2倍。",
+          "content_continued": "下列说法不正确的是",
+          "difficulty": "medium",
+          "is_diagram_question": true,
+          "diagram": {
+            "type": "periodic_table",
+            "title": "元素周期表（局部）",
+            "width_cm": 8,
+            "position": "before_content",
+            "spec": {
+              "highlight_elements": ["C", "N", "O", "Si", "P", "S"],
+              "show_periods": [2, 3],
+              "show_groups": [4, 5, 6]
+            }
+          },
+          "options": [
+            { "label": "A", "content": "X的氢化物比Z的氢化物稳定" },
+            { "label": "B", "content": "Y的最高价氧化物对应水化物可能显碱性" },
+            { "label": "C", "content": "原子半径：Z > Y" },
+            { "label": "D", "content": "Z的非金属性比Y强" }
+          ],
+          "answer": {
+            "content": "B",
+            "explanation": "X为C，Y为N，Z为Si。N的最高价氧化物对应水化物是HNO3，显酸性而非碱性。"
+          }
+        },
+        {
+          "number": 15,
+          "content": "如图为钠原子的结构示意图，下列说法正确的是",
+          "difficulty": "easy",
+          "is_diagram_question": true,
+          "diagram": {
+            "type": "atom_structure",
+            "title": "钠原子结构示意图",
+            "width_cm": 6,
+            "position": "after_content",
+            "spec": {
+              "element": "Na",
+              "nucleus_charge": 11,
+              "electron_shells": [2, 8, 1],
+              "show_label": true
+            }
+          },
+          "options": [
+            { "label": "A", "content": "钠原子的最外层电子数为2" },
+            { "label": "B", "content": "钠原子的核电荷数为11" },
+            { "label": "C", "content": "钠离子核外有3个电子层" },
+            { "label": "D", "content": "钠原子的次外层电子数为8" }
+          ],
+          "answer": {
+            "content": "D",
+            "explanation": "钠原子核外有3个电子层，电子排布为2-8-1，次外层（第二层）有8个电子。A错误（最外层1个），B正确但题目问的是正确选项，C错误（钠离子只有2个电子层），D正确。"
+          }
+        }
+      ]
+    },
+    {
+      "title": "三、非选择题",
+      "type": "comprehensive",
+      "total_points": 40,
+      "instructions": "本题包括5小题，共40分",
+      "questions": [
+        {
+          "number": 28,
+          "content": "工业上合成氨的原理示意图如下。",
+          "points": 10,
+          "is_diagram_question": true,
+          "diagram": {
+            "type": "flowchart",
+            "title": "合成氨工业流程图",
+            "width_cm": 14,
+            "height_cm": 4,
+            "position": "after_content",
+            "spec": {
+              "nodes": [
+                { "id": "input", "label": "N₂ + H₂\n(原料气)", "shape": "box" },
+                { "id": "compress", "label": "压缩\n加压", "shape": "box" },
+                { "id": "heat", "label": "加热\n催化剂", "shape": "box" },
+                { "id": "cool", "label": "冷却\n冷凝", "shape": "box" },
+                { "id": "separate", "label": "分离\n液氨", "shape": "box" },
+                {
+                  "id": "recycle",
+                  "label": "未反应气体\n循环利用",
+                  "shape": "box"
+                }
+              ],
+              "edges": [
+                { "from": "input", "to": "compress" },
+                { "from": "compress", "to": "heat" },
+                { "from": "heat", "to": "cool" },
+                { "from": "cool", "to": "separate" },
+                { "from": "separate", "to": "recycle" },
+                { "from": "recycle", "to": "input", "label": "循环" }
+              ],
+              "direction": "LR"
+            }
+          },
+          "sub_questions": [
+            {
+              "number": "(1)",
+              "content": "根据上述流程图，写出合成氨反应的化学方程式：__________________。",
+              "points": 3,
+              "answer": {
+                "content": "N₂ + 3H₂ ⇌ 2NH₃（高温高压，催化剂）",
+                "scoring_criteria": [
+                  { "point": "化学式正确", "score": 1 },
+                  { "point": "配平正确", "score": 1 },
+                  { "point": "条件标注完整", "score": 1 }
+                ]
+              }
+            },
+            {
+              "number": "(2)",
+              "content": "分析流程图中压缩加压步骤的目的是__________________。",
+              "points": 3,
+              "answer": {
+                "content": "增大压强，提高反应速率和原料转化率",
+                "scoring_criteria": [
+                  { "point": "提高反应速率", "score": 1.5 },
+                  { "point": "提高转化率", "score": 1.5 }
+                ]
+              }
+            },
+            {
+              "number": "(3)",
+              "content": "合成氨反应使用催化剂的作用是__________________。",
+              "points": 2,
+              "answer": {
+                "content": "加快反应速率，降低反应所需温度"
+              }
+            },
+            {
+              "number": "(4)",
+              "content": "下列说法正确的是__________________。",
+              "points": 2,
+              "options": [
+                "A. 提高反应温度可以加快反应速率",
+                "B. 使用催化剂能提高氨的产率",
+                "C. 及时分离出液氨有利于平衡正向移动",
+                "D. 未反应的气体循环使用可以提高原料利用率"
+              ],
+              "answer": {
+                "content": "ACD",
+                "explanation": "B错误，催化剂只能加快反应速率，不能提高产率（平衡产率）",
+                "scoring_criteria": [
+                  { "point": "选对1个", "score": 1 },
+                  { "point": "全对", "score": 2 }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "number": 29,
+          "content": "某兴趣小组用下列装置探究SO₂的性质。",
+          "points": 8,
+          "is_diagram_question": true,
+          "diagram": {
+            "type": "experiment_setup",
+            "title": "SO₂性质探究实验装置图",
+            "width_cm": 12,
+            "position": "after_content",
+            "spec": {
+              "apparatus": [
+                {
+                  "name": "圆底烧瓶",
+                  "content": "Na₂SO₃ + 浓H₂SO₄",
+                  "position": "left"
+                },
+                {
+                  "name": "洗气瓶1",
+                  "content": "品红溶液",
+                  "position": "middle"
+                },
+                { "name": "洗气瓶2", "content": "溴水", "position": "middle" },
+                {
+                  "name": "尾气吸收",
+                  "content": "NaOH溶液",
+                  "position": "right"
+                }
+              ],
+              "connections": [
+                { "from": "圆底烧瓶", "to": "洗气瓶1", "label": "SO₂" },
+                { "from": "洗气瓶1", "to": "洗气瓶2" },
+                { "from": "洗气瓶2", "to": "尾气吸收" }
+              ],
+              "layout": "horizontal"
+            }
+          },
+          "sub_questions": [
+            {
+              "number": "(1)",
+              "content": "制取SO₂的化学方程式是__________________。",
+              "points": 1,
+              "answer": {
+                "content": "Na₂SO₃ + H₂SO₄(浓) = Na₂SO₄ + SO₂↑ + H₂O"
+              }
+            },
+            {
+              "number": "(2)",
+              "content": "SO₂通入品红溶液，溶液褪色，体现了SO₂具有__________________性。",
+              "points": 1,
+              "answer": {
+                "content": "漂白"
+              }
+            },
+            {
+              "number": "(3)",
+              "content": "SO₂通入溴水，溴水褪色，反应的化学方程式是__________________，该反应中SO₂作__________________剂。",
+              "points": 3,
+              "is_diagram_question": true,
+              "answer": {
+                "content": "SO₂ + Br₂ + 2H₂O = H₂SO₄ + 2HBr；还原",
+                "scoring_criteria": [
+                  { "point": "方程式正确", "score": 2 },
+                  { "point": "还原剂", "score": 1 }
+                ]
+              }
+            },
+            {
+              "number": "(4)",
+              "content": "尾气处理可选用__________________溶液吸收SO₂。",
+              "points": 1,
+              "options": ["A. 稀硫酸", "B. 氢氧化钠溶液", "C. 饱和碳酸钠溶液"],
+              "answer": {
+                "content": "BC",
+                "explanation": "碱性溶液可以吸收酸性气体SO₂"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
