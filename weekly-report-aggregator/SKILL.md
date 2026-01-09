@@ -14,6 +14,7 @@ Transform raw weekly team report text into structured Word-compatible table data
 ### Step 1: Parse Input Text
 
 Extract the following information from user-provided text:
+
 - Team member names (for internal tracking, not shown in output)
 - Business lines / departments
 - Time allocation (percentages or person-days)
@@ -35,6 +36,7 @@ Transform business line categories using these rules:
    - "营销" → 营销
    - "履约" → 履约
    - "技术支撑" → 技术支撑
+   - "财务" 或 "BMS" → 财务/BMS
 
 2. **GM-based classification**:
    - ANY mention of "GM1" (in any context) → classify as "Saas软件"
@@ -44,6 +46,7 @@ Transform business line categories using these rules:
    - If none of the above matches → classify as "Saas软件"
 
 **Examples:**
+
 - "GM1新功能开发" → Saas软件
 - "GM2订单处理" → 履约
 - "系统维护" (no explicit match) → Saas软件
@@ -57,6 +60,7 @@ Convert percentage allocations to person-days using standard 5-day work week:
 **Formula:** Percentage × 5 = Person-days
 
 **Examples:**
+
 - 30% = 0.30 × 5 = 1.5 人日
 - 50% = 0.50 × 5 = 2.5 人日
 - 100% = 1.00 × 5 = 5.0 人日
@@ -77,7 +81,7 @@ Generate Word-compatible table with these specifications:
 **Table Structure:**
 
 | 小组/业务线 | 本期实际投入资源 | 项目/迭代 | 本期工作内容 | 项目进度/风险 |
-|------------|----------------|-----------|------------|-------------|
+| ----------- | ---------------- | --------- | ------------ | ------------- |
 
 **Formatting Rules:**
 
@@ -90,6 +94,7 @@ Generate Word-compatible table with these specifications:
 **Output Format:**
 
 Provide table data in markdown format that is easily convertible to Word tables. For rows that belong to the same business line:
+
 - The first row shows the business line name and total person-days
 - Subsequent rows use empty cells for business line and person-days columns
 - Empty cells indicate these rows should be merged with the first row when creating the Word document
@@ -112,6 +117,7 @@ Provide table data in markdown format that is easily convertible to Word tables.
 ### Scenario 1: Mixed Percentage and Person-Day Input
 
 **Input:**
+
 ```
 张三：GM1开发 30%，系统维护 20%
 李四：客商平台 2.5人日
@@ -119,13 +125,15 @@ Provide table data in markdown format that is easily convertible to Word tables.
 ```
 
 **Processing:**
+
 - 张三 GM1开发: 30% → 1.5人日, classify as Saas软件
-- 张三 系统维护: 20% → 1.0人日, classify as Saas软件  
+- 张三 系统维护: 20% → 1.0人日, classify as Saas软件
 - 李四 客商平台: 2.5人日, classify as 客商
 - 王五 GM2订单: 50% → 2.5人日, classify as 履约
 - 王五 DTC渠道: 1人日, classify as DTC
 
 **Aggregation:**
+
 - Saas软件: 1.5 + 1.0 = 2.5人日
 - 客商: 2.5人日
 - 履约: 2.5人日
@@ -134,6 +142,7 @@ Provide table data in markdown format that is easily convertible to Word tables.
 ### Scenario 2: Ambiguous Business Lines
 
 **Input:**
+
 ```
 开发人员A：新功能开发 40%
 开发人员B：GM1模块 30%
@@ -141,6 +150,7 @@ Provide table data in markdown format that is easily convertible to Word tables.
 ```
 
 **Processing:**
+
 - "新功能开发" - no explicit match → Saas软件
 - "GM1模块" - contains GM1 → Saas软件
 - "平台维护" - no explicit match → Saas软件
@@ -160,6 +170,7 @@ All classify to Saas软件, total: (0.4×5) + (0.3×5) + (1.0×5) = 9.0人日
 ## Example Complete Workflow
 
 **User Input:**
+
 ```
 本周工作汇总：
 - 张三：GM1用户模块 30%，完成登录功能开发，按计划推进
@@ -170,6 +181,7 @@ All classify to Saas软件, total: (0.4×5) + (0.3×5) + (1.0×5) = 9.0人日
 ```
 
 **Output:**
+
 ```
 | 小组/业务线 | 本期实际投入资源 | 项目/迭代 | 本期工作内容 | 项目进度/风险 |
 |:-----------|:---------------|:---------|:-----------|:------------|
@@ -179,5 +191,9 @@ All classify to Saas软件, total: (0.4×5) + (0.3×5) + (1.0×5) = 9.0人日
 | 履约 | 2.5人日 | GM2订单系统 | 订单流程优化 | 存在性能问题需优化 |
 | DTC | 1.5人日 | DTC渠道 | 渠道对接开发 | 测试阶段 |
 ```
+
 | DTC (行合并) | 1.5人日 (行合并) | DTC渠道 | 渠道对接开发 | 测试阶段 |
+
+```
+
 ```
