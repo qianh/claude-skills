@@ -99,15 +99,15 @@ Provide table data in markdown format that is easily convertible to Word tables.
 - Subsequent rows use empty cells for business line and person-days columns
 - Empty cells indicate these rows should be merged with the first row when creating the Word document
 
-```
-| 小组/业务线 | 本期实际投入资源 | 项目/迭代 | 本期工作内容 | 项目进度/风险 |
-|:-----------|:---------------|:---------|:-----------|:------------|
-| Saas软件 | 8.5人日 | 项目A | 完成用户模块开发 | 按计划进行 |
-| | | 项目B | 系统性能优化 | 存在技术风险 |
-| | | GM1功能 | 新功能设计评审 | 需求待确认 |
-| 履约 | 3.5人日 | GM2订单系统 | 订单处理流程优化 | 已完成80% |
-| | | 物流对接 | 第三方API集成 | 测试中 |
-| 客商 | 2.0人日 | 客商门户 | 权限管理升级 | 按计划进行 |
+```markdown
+| 小组/业务线 | 本期实际投入资源 | 项目/迭代   | 本期工作内容     | 项目进度/风险 |
+| :---------- | :--------------- | :---------- | :--------------- | :------------ |
+| Saas软件    | 8.5人日          | 项目A       | 完成用户模块开发 | 按计划进行    |
+|             |                  | 项目B       | 系统性能优化     | 存在技术风险  |
+|             |                  | GM1功能     | 新功能设计评审   | 需求待确认    |
+| 履约        | 3.5人日          | GM2订单系统 | 订单处理流程优化 | 已完成80%     |
+|             |                  | 物流对接    | 第三方API集成    | 测试中        |
+| 客商        | 2.0人日          | 客商门户    | 权限管理升级     | 按计划进行    |
 ```
 
 **Important:** Do NOT add any text annotations like "(行合并)" in the output cells. Keep business line names and person-day values clean without any additional markers.
@@ -159,13 +159,21 @@ All classify to Saas软件, total: (0.4×5) + (0.3×5) + (1.0×5) = 9.0人日
 
 ## Output Guidelines
 
-1. Always provide table in markdown format where empty cells indicate merge requirements
-2. Include aggregated person-day totals for each business line in the first row only
-3. Maintain original work content and project status descriptions
-4. Do not include personal names in any table column
-5. Sort by business line to group merged cells together
-6. Use consistent number formatting (one decimal place for person-days)
-7. **CRITICAL:** Do NOT add any text like "(行合并)" in the output - keep cells clean
+1. **CRITICAL:** Always wrap the final table output in a markdown code block using triple backticks with `markdown` language identifier, like this:
+   ````
+   ```markdown
+   | 小组/业务线 | ... |
+   |:-----------|:...|
+   ```
+   ````
+2. Always provide table in markdown format where empty cells indicate merge requirements
+3. Include aggregated person-day totals for each business line in the first row only
+4. Maintain original work content and project status descriptions
+5. Do not include personal names in any table column
+6. Sort by business line to group merged cells together
+7. Use consistent number formatting (one decimal place for person-days)
+8. **CRITICAL:** Do NOT add any text like "(行合并)" in the output - keep cells clean
+9. At the end, show total person-days summary: **本周总投入: X.X人日**
 
 ## Example Complete Workflow
 
@@ -182,18 +190,14 @@ All classify to Saas软件, total: (0.4×5) + (0.3×5) + (1.0×5) = 9.0人日
 
 **Output:**
 
-```
-| 小组/业务线 | 本期实际投入资源 | 项目/迭代 | 本期工作内容 | 项目进度/风险 |
-|:-----------|:---------------|:---------|:-----------|:------------|
-| Saas软件 | 2.5人日 | GM1用户模块 | 完成登录功能开发 | 按计划推进 |
-| | | 系统维护 | 日常bug修复 | 正常 |
-| 客商 | 2.0人日 | 客商平台权限 | 完成权限管理升级 | 已上线 |
-| 履约 | 2.5人日 | GM2订单系统 | 订单流程优化 | 存在性能问题需优化 |
-| DTC | 1.5人日 | DTC渠道 | 渠道对接开发 | 测试阶段 |
-```
-
-| DTC (行合并) | 1.5人日 (行合并) | DTC渠道 | 渠道对接开发 | 测试阶段 |
-
+```markdown
+| 小组/业务线 | 本期实际投入资源 | 项目/迭代    | 本期工作内容     | 项目进度/风险      |
+| :---------- | :--------------- | :----------- | :--------------- | :----------------- |
+| Saas软件    | 2.5人日          | GM1用户模块  | 完成登录功能开发 | 按计划推进         |
+|             |                  | 系统维护     | 日常bug修复      | 正常               |
+| 客商        | 2.0人日          | 客商平台权限 | 完成权限管理升级 | 已上线             |
+| 履约        | 2.5人日          | GM2订单系统  | 订单流程优化     | 存在性能问题需优化 |
+| DTC         | 1.5人日          | DTC渠道      | 渠道对接开发     | 测试阶段           |
 ```
 
-```
+**本周总投入: 9.0人日**
