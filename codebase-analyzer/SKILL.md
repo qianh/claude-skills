@@ -9,7 +9,13 @@ description: 深度分析项目代码库，生成完整的开发指导手册。�
 
 ## 核心原则
 
-**避免上下文溢出**：本技能设计为支持任意规模的代码库分析。通过脚本化分析和多代理协作，确保即使分析 10000+ 文件也不会导致上下文累积过大。
+1. **避免上下文溢出**：本技能设计为支持任意规模的代码库分析。通过脚本化分析和多代理协作，确保即使分析 10000+ 文件也不会导致上下文累积过大。
+
+2. **禁止污染项目目录**：
+   - ❌ 禁止复制脚本到项目目录（如 `_codebase_scanner.js`）
+   - ❌ 禁止在项目目录创建临时文件（如 `_codebase_analysis.json`）
+   - ✅ 所有脚本直接从 `~/.claude/skills/` 原位置执行
+   - ✅ 所有输出文件写入 `/tmp/` 目录
 
 ---
 
@@ -193,14 +199,26 @@ find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx"
 
 **严禁使用 Read/view_file 遍历文件进行定量分析。**
 
+### ⚠️ 重要：不要污染项目目录
+
+执行脚本时必须遵守以下规则：
+
+1. **禁止复制脚本到项目目录** - 直接从 `~/.claude/skills/` 原位置执行
+2. **禁止在项目目录创建任何文件** - 所有输出必须写入 `/tmp/` 目录
+3. **执行完成后检查** - 确保项目目录没有新增任何 `_*.js` 或 `_*.json` 文件
+
 ### 阶段 S1：执行定量分析脚本
 
-使用预定义的分析脚本进行批量统计。**所有临时文件输出到 `/tmp` 目录，不污染项目目录。**
+使用预定义的分析脚本进行批量统计。
 
-#### 步骤 1.1：执行脚本（直接从原位置执行，无需复制）
+#### 执行命令（直接从原位置执行，禁止复制脚本）
 
 ```bash
+# ✅ 正确：直接从原位置执行
 node ~/.claude/skills/codebase-analyzer/assets/analyzer-scripts/codebase-scanner.js --dir src --output /tmp/_codebase_analysis.json --batch-output
+
+# ❌ 错误：不要复制脚本到项目目录
+# cp ~/.claude/skills/.../codebase-scanner.js ./_codebase_scanner.js  ← 禁止
 ```
 
 如果没有 `src` 目录：
@@ -231,10 +249,14 @@ cat /tmp/_codebase_analysis.json
 
 **这是生成实操手册的关键步骤。** 按开发场景提取完整的代码示例，而不是统计数据。
 
-#### 步骤 2.1：执行模式提取脚本
+#### 执行命令（直接从原位置执行，禁止复制脚本）
 
 ```bash
+# ✅ 正确：直接从原位置执行
 node ~/.claude/skills/codebase-analyzer/assets/analyzer-scripts/pattern-extractor.js --dir . --output /tmp/_dev_patterns.json
+
+# ❌ 错误：不要复制脚本到项目目录
+# cp ~/.claude/skills/.../pattern-extractor.js ./_pattern_extractor.js  ← 禁止
 ```
 
 #### 步骤 2.2：读取模式提取结果
