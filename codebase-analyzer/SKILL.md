@@ -227,32 +227,42 @@ cat /tmp/_codebase_analysis.json
 - `technologies`：推断的技术栈
 - `anomalies`：检测到的异常（多方案混用等）
 
-### 阶段 S2：执行定性抽样分析
+### 阶段 S2：提取开发模式（核心步骤）
 
-使用预定义的抽样脚本选择代表性文件。**所有临时文件输出到 `/tmp` 目录。**
+**这是生成实操手册的关键步骤。** 按开发场景提取完整的代码示例，而不是统计数据。
 
-#### 步骤 2.1：执行脚本（直接从原位置执行，无需复制）
-
-```bash
-node ~/.claude/skills/codebase-analyzer/assets/analyzer-scripts/sample-extractor.js --dir src --output /tmp/_code_samples.json --max-samples 10 --analysis /tmp/_codebase_analysis.json
-```
-
-#### 步骤 2.2：读取抽样结果
+#### 步骤 2.1：执行模式提取脚本
 
 ```bash
-cat /tmp/_code_samples.json
+node ~/.claude/skills/codebase-analyzer/assets/analyzer-scripts/pattern-extractor.js --dir . --output /tmp/_dev_patterns.json
 ```
 
-抽样脚本会智能选择以下类型的代表性文件：
+#### 步骤 2.2：读取模式提取结果
 
-- 入口文件（理解项目结构）
-- 布局文件（理解页面组织）
-- 路由配置（理解导航结构）
-- 状态管理（理解数据流）
-- API 封装（理解请求模式）
-- 典型组件（理解编码风格）
+```bash
+cat /tmp/_dev_patterns.json
+```
 
-### 阶段 S3：多代理协作深度分析
+脚本会按以下**开发场景**提取**完整代码示例**：
+
+| 场景           | 提取内容                        | 用途               |
+| -------------- | ------------------------------- | ------------------ |
+| **页面开发**   | 完整的页面组件代码              | 新建页面时参考     |
+| **组件开发**   | Props 定义 + 组件实现           | 新建组件时参考     |
+| **表单开发**   | Form.useForm + Form.Item 结构   | 创建表单时参考     |
+| **表格开发**   | columns 定义 + Table 配置       | 创建表格时参考     |
+| **接口定义**   | Service 文件结构                | 定义新接口时参考   |
+| **接口调用**   | useEffect + API 调用 + 错误处理 | 调用接口时参考     |
+| **样式编写**   | LESS/SCSS 文件结构              | 写样式时参考       |
+| **路由配置**   | routes.ts 配置示例              | 添加路由时参考     |
+| **状态管理**   | Store 定义 + useSelector 使用   | 使用全局状态时参考 |
+| **弹窗开发**   | Modal/Drawer 完整示例           | 创建弹窗时参考     |
+| **Hooks 使用** | 自定义 Hook 定义                | 编写 Hook 时参考   |
+| **类型定义**   | interface/type 定义             | 定义类型时参考     |
+
+**每个场景提取 1-3 个最佳实践文件的完整代码。**
+
+### 阶段 S3：多代理协作深度分析（可选）
 
 对于需要 AI 理解能力的复杂分析（如代码风格、模式识别），使用多代理协作。
 
@@ -306,20 +316,110 @@ cat /tmp/_code_samples.json
 中间汇总 A + B → 最终汇总
 ```
 
-### 阶段 S4：生成开发手册
+### 阶段 S4：生成实操开发手册
 
-基于以下数据源生成最终的 Markdown 开发手册：
+基于 `/tmp/_dev_patterns.json` 的模式提取结果，生成**实操开发手册**。
 
-1. **定量数据**：来自 `_codebase_analysis.json`
-2. **代码示例**：来自 `_code_samples.json`
-3. **深度分析**：来自多代理协作的汇总结果
+#### 输出格式要求
 
-参考 `assets/dev-guide-template.md` 模板结构。
+**不是统计报告，而是操作手册。** 每个章节必须包含：
+
+1. **操作步骤**：1-2-3 步骤式说明
+2. **完整代码示例**：从项目中提取的真实代码（标注文件来源）
+3. **注意事项**：项目特有的约定或陷阱
+
+#### 必须包含的章节
+
+```markdown
+## 如何新建页面
+
+### 步骤
+
+1. 在 `src/pages/` 下创建目录
+2. 创建页面组件文件
+3. 配置路由
+
+### 代码示例
+
+来源：`src/pages/xxx/index.tsx`
+（完整代码）
+
+---
+
+## 如何创建组件
+
+### 步骤
+
+### 代码示例（含 Props 定义）
+
+---
+
+## 如何创建表单
+
+### 步骤
+
+### 代码示例（Form.useForm + Form.Item）
+
+---
+
+## 如何创建表格
+
+### 步骤
+
+### 代码示例（columns + Table）
+
+---
+
+## 如何添加接口
+
+### 步骤
+
+1. 在 `src/service/` 下定义接口
+2. 在组件中调用
+
+### 接口定义示例
+
+### 接口调用示例
+
+---
+
+## 如何编写样式
+
+### 步骤
+
+### 代码示例
+
+---
+
+## 如何添加路由
+
+### 步骤
+
+### 代码示例
+
+---
+
+## 如何使用全局状态
+
+### 步骤
+
+### 代码示例
+
+---
+
+## 如何创建弹窗
+
+### 步骤
+
+### 代码示例
+```
+
+参考 `assets/dev-guide-template.md` 获取完整模板结构。
 
 ### 阶段 S5：清理临时文件
 
 ```bash
-rm -f /tmp/_codebase_analysis.json /tmp/_code_samples.json /tmp/_codebase_analysis_batch_*.json
+rm -f /tmp/_codebase_analysis.json /tmp/_dev_patterns.json /tmp/_codebase_analysis_batch_*.json
 ```
 
 ---
