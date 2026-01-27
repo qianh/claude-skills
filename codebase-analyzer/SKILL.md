@@ -223,7 +223,7 @@ find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx"
 ### 文件结构
 
 ```
-docs/
+.ai-docs/
 ├── components/           # 组件使用文档
 │   ├── TableTemplatePro.md
 │   ├── MyRareComponent.md
@@ -281,7 +281,7 @@ docs/
 
 ##### 组件文档模板
 
-文件路径：`docs/components/TableTemplatePro.md`
+文件路径：`.ai-docs/components/TableTemplatePro.md`
 
 ```markdown
 # TableTemplatePro
@@ -337,7 +337,7 @@ return (
 
 ##### Hook 文档模板
 
-文件路径：`docs/hooks/useRequest.md`
+文件路径：`.ai-docs/hooks/useRequest.md`
 
 ```markdown
 # useRequest
@@ -403,7 +403,7 @@ return <Table loading={loading} dataSource={data?.list} />;
 
 ##### API 文档模板
 
-文件路径：`docs/apis/user.md`
+文件路径：`.ai-docs/apis/user.md`
 
 ```markdown
 # user 接口模块
@@ -574,10 +574,10 @@ src/
 
 ## 输出
 
-输出到项目的 `docs/` 目录：
+输出到项目的 `.ai-docs/` 目录：
 
 ```
-docs/
+.ai-docs/
 ├── DEV-GUIDE.md         # 总入口文档
 ├── inventory.md         # 完整物资清单（索引）
 ├── components/          # 组件文档目录
