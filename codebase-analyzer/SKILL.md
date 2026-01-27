@@ -9,64 +9,195 @@ description: 深度分析项目代码库，生成完整的开发指导手册。�
 
 ## 核心原则
 
-1. **收集使用示例，而非组件定义**：重点是"组件如何被使用"，而非"组件如何被定义"
-2. **场景驱动**：按页面类型（列表页、表单页、详情页等）组织组件，帮助 AI 根据 PRD 选择合适组件
-3. **全量覆盖**：所有被使用的组件、Hook、工具都必须有使用示例，无论使用频率高低
-4. **多代理协作**：通过批次化分析支持任意规模代码库
+1. **强制全量分析**：每个文件都必须被读取和分析，不允许采样或跳过
+2. **销项机制**：使用待办列表文件追踪进度，处理完一批就物理删除，确保不遗漏
+3. **断点续传**：支持中断后继续，从上次停止的地方恢复
+4. **收集使用示例**：重点是"组件如何被使用"，而非"组件如何被定义"
 
 ---
 
-## 阶段 0：规模评估（强制执行）
+## ⚠️ 强制执行规则（严禁违反）
 
-**在所有分析开始前，必须先执行规模评估。**
-
-### 步骤
-
-1. 统计代码文件数量：
-
-```bash
-find src -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.vue" \) | wc -l
 ```
+本 Skill 的核心约束：
 
-如果没有 `src` 目录，使用项目根目录：
-
-```bash
-find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.vue" \) -not -path "*/node_modules/*" -not -path "*/.git/*" | wc -l
+1. 必须处理 _todo.txt 中的每一个文件，不允许跳过
+2. 每处理完一批文件，必须从 _todo.txt 中删除对应行
+3. 只有当 _todo.txt 为空时，才能进入文档生成阶段
+4. 不允许"采样分析"或"选择性分析"
+5. 如果 Token 不足，应该停止并告知用户，而不是跳过文件
 ```
-
-2. **根据规模确定批次策略**：
-
-| 文件数 | 批次大小 | 汇总层级 |
-| ------ | -------- | -------- |
-| < 50   | 逐个读取 | 单层汇总 |
-| 50-200 | 10 个/批 | 单层汇总 |
-| 200+   | 20 个/批 | 多层汇总 |
 
 ---
 
-## 阶段 1：全量扫描
+## 工作目录结构
 
-使用 Glob 工具获取所有代码文件列表，排除以下目录：
+所有中间文件存储在 `.ai-docs/` 目录：
+
+```
+.ai-docs/
+├── _todo.txt              # 待处理文件列表（销项清单）
+├── _done.txt              # 已处理文件列表（断点续传用）
+├── _progress.md           # 进度追踪报告
+├── _batches/              # 批次分析结果
+│   ├── batch_001.json
+│   ├── batch_002.json
+│   └── ...
+├── _aggregated.json       # 汇总后的完整数据
+│
+├── COMPONENT-SELECTOR.md  # 【最终输出】组件选择器
+├── DEV-GUIDE.md           # 【最终输出】开发手册入口
+├── inventory.md           # 【最终输出】物资清单
+├── scenarios/             # 【最终输出】场景文档
+├── components/            # 【最终输出】组件文档
+├── hooks/                 # 【最终输出】Hook 文档
+└── utils/                 # 【最终输出】工具函数文档
+```
+
+---
+
+## 阶段 0：初始化检查（必须执行）
+
+### 步骤 0.1：检查是否存在进行中的分析
+
+```bash
+# 检查 _todo.txt 是否存在且不为空
+if [ -s .ai-docs/_todo.txt ]; then
+  echo "发现未完成的分析任务，将继续执行..."
+  # 进入断点续传模式，跳到阶段 2
+else
+  echo "开始全新分析..."
+  # 进入全新分析模式，执行阶段 1
+fi
+```
+
+### 步骤 0.2：创建工作目录
+
+```bash
+mkdir -p .ai-docs/_batches
+```
+
+---
+
+## 阶段 1：创建待办列表（全新分析时执行）
+
+### 步骤 1.1：扫描所有代码文件
+
+使用 Glob 工具扫描，排除以下目录：
 
 - `node_modules/`
 - `dist/` / `build/` / `.next/` / `.nuxt/`
 - `.git/`
 - `coverage/`
-- `.umi/`（Umi 生成文件）
+- `.umi/`
+- `.ai-docs/`
 
-### 扫描命令
+扫描模式：
 
 ```
-**/*.{ts,tsx,js,jsx,vue,svelte}
+src/**/*.{ts,tsx,js,jsx,vue,svelte}
+```
+
+如果没有 `src` 目录，扫描项目根目录。
+
+### 步骤 1.2：写入待办列表
+
+将所有文件路径写入 `.ai-docs/_todo.txt`，每行一个文件：
+
+```
+src/pages/user/list.tsx
+src/pages/user/detail.tsx
+src/pages/order/list.tsx
+src/components/Button.tsx
+src/hooks/useRequest.ts
+...
+```
+
+### 步骤 1.3：初始化进度报告
+
+创建 `.ai-docs/_progress.md`：
+
+```markdown
+# 代码分析进度报告
+
+开始时间：{当前时间}
+总文件数：{文件数量}
+已完成：0
+待处理：{文件数量}
+
+## 批次记录
+
+| 批次 | 文件数 | 状态 | 完成时间 |
+| ---- | ------ | ---- | -------- |
+```
+
+### 步骤 1.4：清空已完成列表
+
+```bash
+> .ai-docs/_done.txt
 ```
 
 ---
 
-## 阶段 2：批次化分析（多代理协作）
+## 阶段 2：批次化分析（死循环，严禁跳过）
 
-**关键原则**：提取每个文件中"使用了哪些组件/Hook"以及"如何使用的代码片段"。
+### ⚠️ 核心约束
 
-### ⚠️ 核心区分：定义 vs 使用
+```
+【死循环规则】
+
+执行以下步骤，直到 _todo.txt 为空：
+
+1. 读取 _todo.txt
+2. 如果有内容：
+   a. 取前 10 行（10个文件）
+   b. 读取并分析这 10 个文件
+   c. 将结果写入 _batches/batch_XXX.json
+   d. 将这 10 行追加到 _done.txt
+   e. 从 _todo.txt 删除这 10 行
+   f. 更新 _progress.md
+   g. 【必须】返回步骤 1，继续循环
+3. 如果为空：
+   → 才能进入阶段 3
+
+【严禁】在 _todo.txt 不为空时进入阶段 3
+【严禁】跳过任何文件
+【严禁】采样分析
+```
+
+### 步骤 2.1：读取待办列表
+
+```bash
+# 读取前 10 行
+head -10 .ai-docs/_todo.txt
+```
+
+### 步骤 2.2：分析文件批次
+
+对于取出的 10 个文件，逐个使用 Read 工具读取，然后分析：
+
+**分析任务**：
+
+1. **识别页面场景**：根据文件路径和内容判断
+   - list（列表页）
+   - detail（详情页）
+   - form（表单页）
+   - modal（弹窗）
+   - other（其他）
+
+2. **提取组件使用**（重点！）：
+   - 找出 JSX 中使用的所有组件
+   - 提取使用代码片段（不是整个函数）
+   - 记录使用的 props
+   - 标注 import 来源
+
+3. **提取 Hook 使用**：
+   - 找出所有 Hook 调用
+   - 提取调用代码和返回值解构
+
+4. **提取工具函数使用**
+
+### ⚠️ 关键区分：定义 vs 使用
 
 ```tsx
 // ❌ 这是"定义" - 不是我们要收集的重点
@@ -80,113 +211,132 @@ export const TableTemplatePro = (props) => { ... }
 />
 ```
 
-### 子代理任务模板
+### 步骤 2.3：保存批次结果
 
-```
-请分析以下文件批次，返回结构化汇总：
+将分析结果写入 `.ai-docs/_batches/batch_XXX.json`：
 
-文件列表：
-- src/pages/user/list.tsx
-- src/pages/order/detail.tsx
-- ...
-
-分析任务：
-
-1. **识别页面场景**：根据文件路径和内容判断页面类型
-   - 列表页（list/index + 表格组件）
-   - 详情页（detail + 描述/卡片组件）
-   - 表单页（form/add/edit + 表单组件）
-   - 弹窗组件（Modal/Drawer）
-   - 其他
-
-2. **提取组件使用**：找出 JSX 中使用的所有组件，提取使用代码片段
-   - 包含完整的 props 配置
-   - 代码片段应该能独立理解
-   - 优先提取配置丰富、有代表性的使用
-
-3. **提取 Hook 使用**：找出所有 Hook 调用，提取使用代码片段
-   - 包含 Hook 的参数和返回值解构
-   - 包含 Hook 结果的实际使用
-
-4. **提取工具函数使用**：找出所有工具函数调用
-
-返回格式（JSON）：
+```json
 {
-  "filePath": "src/pages/user/list.tsx",
-  "scenario": {
-    "type": "list",  // list | detail | form | modal | other
-    "description": "用户列表页，支持搜索、分页、批量操作"
-  },
-  "componentUsages": [
+  "batchId": 1,
+  "timestamp": "2024-01-27T10:30:00Z",
+  "files": [
     {
-      "name": "TableTemplatePro",
-      "importFrom": "@dzg/gm-template",
-      "code": "<TableTemplatePro\n  title=\"用户列表\"\n  fetchPageUrl=\"/api/user/list\"\n  columns={columns}\n  rowKey=\"id\"\n  displayHeader={true}\n  tableOperations={buttonList}\n/>",
-      "props": ["title", "fetchPageUrl", "columns", "rowKey", "displayHeader", "tableOperations"],
-      "description": "带搜索和批量操作的用户列表"
-    },
-    {
-      "name": "Modal",
-      "importFrom": "antd",
-      "code": "<Modal\n  visible={visible}\n  title=\"编辑用户\"\n  onOk={handleSubmit}\n  onCancel={handleClose}\n>\n  <Form>...</Form>\n</Modal>",
-      "props": ["visible", "title", "onOk", "onCancel"],
-      "description": "编辑用户的弹窗表单"
-    }
-  ],
-  "hookUsages": [
-    {
-      "name": "useRequest",
-      "importFrom": "ahooks",
-      "code": "const { loading, data, run } = useRequest(getUserList, {\n  manual: true,\n  debounceInterval: 500\n});",
-      "description": "手动触发的防抖请求"
-    }
-  ],
-  "utilUsages": [
-    {
-      "name": "formatDate",
-      "importFrom": "@/utils/date",
-      "code": "formatDate(record.createTime, 'YYYY-MM-DD HH:mm')",
-      "description": "格式化日期时间"
+      "filePath": "src/pages/user/list.tsx",
+      "scenario": {
+        "type": "list",
+        "description": "用户列表页"
+      },
+      "componentUsages": [
+        {
+          "name": "TableTemplatePro",
+          "importFrom": "@dzg/gm-template",
+          "code": "<TableTemplatePro\n  title=\"用户列表\"\n  fetchPageUrl=\"/api/user/list\"\n  columns={columns}\n  rowKey=\"id\"\n/>",
+          "props": ["title", "fetchPageUrl", "columns", "rowKey"],
+          "description": "带分页的用户列表"
+        }
+      ],
+      "hookUsages": [
+        {
+          "name": "useRequest",
+          "importFrom": "ahooks",
+          "code": "const { loading, data, run } = useRequest(fetchUser, { manual: true });",
+          "description": "手动触发请求"
+        }
+      ],
+      "utilUsages": []
     }
   ]
 }
-
-**重要规则**：
-1. 只收集"使用"代码，不收集"定义"代码
-2. 代码片段必须是实际的 JSX 或调用代码，不是整个函数
-3. 代码片段应该简洁但完整，能独立理解
-4. 每个组件/Hook 在同一文件中可能有多个不同用法，都要收集
-5. 必须标注 importFrom 来源
 ```
 
-### 批次分配策略
+### 步骤 2.4：更新进度文件
 
-| 文件数   | 每批文件数 | 说明               |
-| -------- | ---------- | ------------------ |
-| < 50     | 逐个处理   | 每个文件单独分析   |
-| 50-200   | 10 个/批   | 平衡速度和准确性   |
-| 200+     | 20 个/批   | 高效处理大规模项目 |
+**追加到 \_done.txt**：
+
+```bash
+# 将已处理的文件追加到 _done.txt
+head -10 .ai-docs/_todo.txt >> .ai-docs/_done.txt
+```
+
+**从 \_todo.txt 删除已处理的行**：
+
+```bash
+# 删除前 10 行
+sed -i '' '1,10d' .ai-docs/_todo.txt  # macOS
+# 或
+sed -i '1,10d' .ai-docs/_todo.txt     # Linux
+```
+
+或者使用更可靠的方式：
+
+```bash
+tail -n +11 .ai-docs/_todo.txt > .ai-docs/_todo.tmp && mv .ai-docs/_todo.tmp .ai-docs/_todo.txt
+```
+
+**更新 \_progress.md**：
+
+在批次记录表格中添加一行，更新统计数字。
+
+### 步骤 2.5：检查是否继续
+
+```bash
+# 检查 _todo.txt 是否还有内容
+if [ -s .ai-docs/_todo.txt ]; then
+  echo "还有文件待处理，继续执行..."
+  # 【必须】返回步骤 2.1
+else
+  echo "所有文件处理完成，进入汇总阶段"
+  # 进入阶段 3
+fi
+```
+
+### 步骤 2.6：向用户报告进度
+
+每完成一个批次，输出当前进度：
+
+```
+📊 批次 {N} 完成
+已处理：{已处理数} / {总数} ({百分比}%)
+当前批次文件：
+  - src/pages/user/list.tsx ✓
+  - src/pages/user/detail.tsx ✓
+  ...
+```
 
 ---
 
-## 阶段 3：汇总与分类
+## 阶段 3：汇总数据（仅当 \_todo.txt 为空时执行）
 
-### 汇总数据结构
+### 前置检查
+
+```bash
+# 必须检查！
+if [ -s .ai-docs/_todo.txt ]; then
+  echo "❌ 错误：还有文件未处理，不能进入汇总阶段"
+  exit 1
+fi
+```
+
+### 步骤 3.1：读取所有批次结果
+
+```bash
+ls .ai-docs/_batches/*.json
+```
+
+读取每个 batch_XXX.json 文件。
+
+### 步骤 3.2：合并数据
+
+创建 `.ai-docs/_aggregated.json`，包含：
 
 ```json
 {
   "scenarios": {
     "list": {
       "description": "列表页场景",
-      "files": ["src/pages/user/list.tsx", "src/pages/order/list.tsx"],
-      "components": ["TableTemplatePro", "SearchForm", "BatchOperation"],
-      "hooks": ["useRequest", "useState"]
-    },
-    "form": {
-      "description": "表单页场景",
-      "files": ["src/pages/user/add.tsx"],
-      "components": ["Form", "DzgForm", "Select"],
-      "hooks": ["useForm", "useRequest"]
+      "files": ["src/pages/user/list.tsx", ...],
+      "components": ["TableTemplatePro", ...],
+      "hooks": ["useRequest", ...]
     }
   },
   "componentIndex": {
@@ -201,26 +351,18 @@ export const TableTemplatePro = (props) => { ... }
           "filePath": "src/pages/user/list.tsx",
           "scenario": "list",
           "code": "...",
-          "props": ["title", "fetchPageUrl", "columns"],
-          "description": "用户列表页"
+          "props": [...],
+          "description": "..."
         }
       ]
     }
   },
-  "hookIndex": {
-    "useRequest": {
-      "importFrom": "ahooks",
-      "usageCount": 45,
-      "scenarios": ["list", "form", "detail"],
-      "usages": [...]
-    }
-  }
+  "hookIndex": {...},
+  "utilIndex": {...}
 }
 ```
 
 ### 组件分类规则
-
-根据组件名称和使用场景自动分类：
 
 | 分类     | 关键词                                       |
 | -------- | -------------------------------------------- |
@@ -231,475 +373,173 @@ export const TableTemplatePro = (props) => { ... }
 | 导航类   | Menu, Tabs, Breadcrumb, Steps                |
 | 反馈类   | Alert, Message, Notification, Spin, Skeleton |
 | 数据展示 | Descriptions, Statistic, Tag, Badge          |
-| 业务组件 | 其他自定义组件                               |
-
-### 场景识别规则
-
-| 场景     | 识别规则                                             |
-| -------- | ---------------------------------------------------- |
-| list     | 路径含 list/index + 使用表格组件                     |
-| detail   | 路径含 detail + 使用 Descriptions/Card               |
-| form     | 路径含 form/add/edit/create + 使用表单组件           |
-| modal    | 文件导出 Modal 组件或主要内容是 Modal                |
-| dashboard| 路径含 dashboard/home + 使用统计/图表组件            |
+| 业务组件 | 其他                                         |
 
 ---
 
-## 阶段 4：生成文档
+## 阶段 4：生成最终文档
 
-### 输出目录结构
+基于 `_aggregated.json` 生成用户可用的文档。
 
-```
-.ai-docs/
-├── DEV-GUIDE.md              # 开发手册总入口
-├── COMPONENT-SELECTOR.md     # 组件选择器（帮助 AI 选择组件）
-├── inventory.md              # 完整物资清单
-├── scenarios/                # 场景文档
-│   ├── list.md              # 列表页开发指南
-│   ├── form.md              # 表单页开发指南
-│   ├── detail.md            # 详情页开发指南
-│   └── modal.md             # 弹窗开发指南
-├── components/               # 组件使用文档
-│   ├── TableTemplatePro.md
-│   ├── Form.md
-│   └── ...
-├── hooks/                    # Hook 使用文档
-│   ├── useRequest.md
-│   └── ...
-└── utils/                    # 工具函数文档
-    ├── formatDate.md
-    └── ...
-```
+### 4.1 生成 COMPONENT-SELECTOR.md（最重要）
 
-### 文档模板
-
-#### 1. 组件选择器（COMPONENT-SELECTOR.md）
-
-**这是最重要的文档，帮助 AI 根据 PRD 需求选择合适的组件。**
+帮助 AI 根据 PRD 需求选择合适组件：
 
 ```markdown
 # 组件选择器
 
-> 根据开发需求快速找到合适的组件。本文档按场景和功能分类，帮助你在开发新功能时选择正确的组件。
+> 根据开发需求快速找到合适的组件。
 
 ## 按场景选择
 
 ### 我要开发列表页
 
-| 需求 | 推荐组件 | 使用频率 | 特点 | 文档 |
-| --- | --- | --- | --- | --- |
-| 标准数据列表 | TableTemplatePro | 61次 | 内置分页、搜索、批量操作 | [查看](components/TableTemplatePro.md) |
-| 简单表格 | Table | 54次 | Antd 原生表格，需手动处理分页 | [查看](components/Table.md) |
-| 虚拟滚动大数据 | VirtualTable | 3次 | 适合 1000+ 行数据 | [查看](components/VirtualTable.md) |
+| 需求         | 推荐组件         | 使用频率 | 特点           | 文档                                   |
+| ------------ | ---------------- | -------- | -------------- | -------------------------------------- |
+| 标准数据列表 | TableTemplatePro | 61次     | 内置分页、搜索 | [查看](components/TableTemplatePro.md) |
+| 简单表格     | Table            | 54次     | Antd 原生      | [查看](components/Table.md)            |
 
 **选择建议**：
-- 管理后台列表页 → TableTemplatePro（首选）
-- 简单展示表格 → Table
-- 大数据量 → VirtualTable
+
+- 管理后台 → TableTemplatePro
+- 简单展示 → Table
 
 ### 我要开发表单页
 
-| 需求 | 推荐组件 | 使用频率 | 特点 | 文档 |
-| --- | --- | --- | --- | --- |
-| 标准表单 | Form + Form.Item | 115次 | Antd 原生表单 | [查看](components/Form.md) |
-| 动态表单 | DzgForm | 30次 | 支持 JSON Schema 配置 | [查看](components/DzgForm.md) |
-
-### 我要开发详情页
-
 ...
-
-### 我要开发弹窗
-
-...
-
-## 按功能选择
-
-### 数据请求
-
-| 需求 | 推荐 Hook | 使用频率 | 特点 | 文档 |
-| --- | --- | --- | --- | --- |
-| 普通请求 | useRequest | 45次 | 支持 loading、防抖、轮询 | [查看](hooks/useRequest.md) |
-| 表格数据 | useAntdTable | 12次 | 专为表格设计，自动分页 | [查看](hooks/useAntdTable.md) |
-
-### 状态管理
-
-...
-
-### 权限控制
-
-| 需求 | 推荐组件 | 使用频率 | 特点 | 文档 |
-| --- | --- | --- | --- | --- |
-| 按钮权限 | PermissionWrapper | 54次 | 包裹需要权限控制的元素 | [查看](components/PermissionWrapper.md) |
 
 ## 同类组件对比
 
 ### 表格组件对比
 
-| 组件 | 来源 | 内置搜索 | 内置分页 | 批量操作 | 适用场景 |
-| --- | --- | --- | --- | --- | --- |
-| TableTemplatePro | @dzg/gm-template | ✅ | ✅ | ✅ | 管理后台列表页 |
-| Table | antd | ❌ | 手动 | ❌ | 简单数据展示 |
-| ProTable | @ant-design/pro-table | ✅ | ✅ | ✅ | 通用管理后台 |
-
-### 表单组件对比
-
-| 组件 | 来源 | 动态字段 | 校验 | 布局 | 适用场景 |
-| --- | --- | --- | --- | --- | --- |
-| Form | antd | 手动 | ✅ | 灵活 | 自定义表单 |
-| DzgForm | @dzg/dzg-form | ✅ JSON | ✅ | 固定 | 配置化表单 |
+| 组件             | 来源             | 内置搜索 | 内置分页 | 适用场景 |
+| ---------------- | ---------------- | -------- | -------- | -------- |
+| TableTemplatePro | @dzg/gm-template | ✅       | ✅       | 管理后台 |
+| Table            | antd             | ❌       | 手动     | 简单展示 |
 ```
 
-#### 2. 场景文档模板（scenarios/list.md）
+### 4.2 生成组件文档
 
-```markdown
-# 列表页开发指南
+为每个使用超过 3 次的组件生成 `components/XXX.md`：
 
-> 本文档介绍如何开发列表页，包含推荐组件、代码模式和完整示例。
+````markdown
+# TableTemplatePro
 
-## 推荐技术栈
+> 企业级表格模板组件
 
-| 功能 | 组件/Hook | 文档 |
-| --- | --- | --- |
-| 表格 | TableTemplatePro | [查看](../components/TableTemplatePro.md) |
-| 数据请求 | useRequest | [查看](../hooks/useRequest.md) |
-| 批量操作 | BatchOperation | [查看](../components/BatchOperation.md) |
-| 权限控制 | PermissionWrapper | [查看](../components/PermissionWrapper.md) |
+## 基本信息
 
-## 完整示例
+| 属性     | 值                 |
+| -------- | ------------------ |
+| 来源     | `@dzg/gm-template` |
+| 使用频率 | 61 次              |
+| 适用场景 | 列表页             |
 
-### 示例 1：标准列表页（用户管理）
+## 使用示例
+
+### 示例 1：基础列表
 
 **来源**：`src/pages/user/list.tsx`
 
 ```tsx
-import { TableTemplatePro } from '@dzg/gm-template';
-import { PermissionWrapper } from '@/components/PermissionWrapper';
-
-const UserList: React.FC = () => {
-  const tableRef = useRef<any>(null);
-  const [selectedRows, setSelectedRows] = useState<any[]>([]);
-
-  const columns = [
-    { title: '用户名', dataIndex: 'username', key: 'username' },
-    { title: '邮箱', dataIndex: 'email', key: 'email' },
-    { title: '状态', dataIndex: 'status', key: 'status' },
-  ];
-
-  const buttonList = [
-    <PermissionWrapper key="add" permission="user:add">
-      <Button type="primary" onClick={() => handleAdd()}>新增</Button>
-    </PermissionWrapper>,
-    <Button key="export" onClick={() => handleExport()}>导出</Button>,
-  ];
-
-  return (
-    <TableTemplatePro
-      ref={tableRef}
-      title="用户列表"
-      columns={columns}
-      fetchPageUrl="/api/user/list"
-      rowKey="id"
-      displayHeader={true}
-      displayCommonSetting={true}
-      tableOperations={buttonList}
-      onSelectChange={({ selectedRows }) => setSelectedRows(selectedRows)}
-    />
-  );
-};
-```
-
-### 示例 2：带复杂筛选的列表页
-
-**来源**：`src/pages/order/list.tsx`
-
-...
-
-## 常见模式
-
-### 刷新列表
-
-```tsx
-tableRef.current?.fetchPage({});
-```
-
-### 获取选中行
-
-```tsx
-const selectedRows = tableRef.current?.getSelectedRows();
-```
-
-### 自定义单元格渲染
-
-```tsx
-const cellRenderer = ({ cellData, column, rowData }) => {
-  if (column.dataIndex === 'status') {
-    return <Tag color={statusColorMap[cellData]}>{cellData}</Tag>;
-  }
-  return cellData;
-};
-```
-```
-
-#### 3. 组件文档模板（components/TableTemplatePro.md）
-
-```markdown
-# TableTemplatePro
-
-> 企业级表格模板组件，内置搜索、分页、批量操作等功能。
-
-## 基本信息
-
-| 属性 | 值 |
-| --- | --- |
-| 来源 | `@dzg/gm-template` |
-| 使用频率 | 61 次 |
-| 适用场景 | 列表页 |
-| 同类组件 | Table, ProTable |
-
-## 使用场景
-
-- ✅ 管理后台数据列表
-- ✅ 需要搜索、分页、批量操作
-- ✅ 需要列设置、视图切换
-- ❌ 简单数据展示（用 Table）
-- ❌ 树形数据（考虑 TreeTable）
-
-## 代码示例
-
-### 示例 1：基础列表
-
-**来源**：`src/pages/carrier-route/index.tsx`
-**场景**：简单的 CRUD 列表
-
-```tsx
-import { TableTemplatePro } from '@dzg/gm-template';
-
 <TableTemplatePro
-  title="船公司航线"
-  displayHeader={true}
-  displayCommonSetting={true}
-  fetchPageUrl="/dzg-orgbase-rest/baseCarrierRoute/pagedQuery"
-  rowKey="id"
+  title="用户列表"
+  fetchPageUrl="/api/user/list"
   columns={columns}
-  cellRenderer={cellRenderer}
-  tableOperations={buttonList}
-  onSelectChange={row => setChecked(row.selectedRows.map(item => item.id))}
+  rowKey="id"
 />
 ```
+````
 
 ### 示例 2：复杂配置
 
-**来源**：`src/pages/order-list/index.tsx`
-**场景**：带自定义渲染、行展开、双击跳转的订单列表
+...
 
-```tsx
-<TableTemplatePro
-  ref={tableRef}
-  title="订单列表"
-  displayHeader={true}
-  displayView={true}
-  displayCommonSetting={true}
-  defaultQueryParams={queryParams}
-  expandColumnKey="businessNo"
-  expandedRowKeys={expandedRowKeys}
-  onExpandedRowsChange={setExpandedRowKeys}
-  cellRendererMini={getCellRendererMini({ handleClick })}
-  onRowDoubleClick={({ rowData }) => {
-    window.open(`/detail?id=${rowData.casenumber}`, '_blank');
-  }}
-  canCellCopy
-  rowClassName={rowCustomizedStyle}
-  fetchPageUrl="/api/order/list"
-  rowKey="casenumber"
-  tableOperations={buttonList}
-  renderSelectedSummaryInfo={renderTeu}
-  isColumnFilterable
-/>
-```
+````
 
-## 常用 Props
+### 4.3 生成场景文档
 
-| Prop | 类型 | 说明 | 必填 |
-| --- | --- | --- | --- |
-| title | string | 表格标题 | 是 |
-| fetchPageUrl | string | 数据接口地址 | 是 |
-| columns | Column[] | 列配置 | 是 |
-| rowKey | string | 行唯一标识字段 | 是 |
-| displayHeader | boolean | 显示头部 | 否 |
-| displayCommonSetting | boolean | 显示设置按钮 | 否 |
-| tableOperations | ReactNode[] | 操作按钮 | 否 |
-| cellRenderer | function | 单元格渲染器 | 否 |
-| onSelectChange | function | 选中行变化回调 | 否 |
+为每个场景生成 `scenarios/XXX.md`。
 
-## 常用方法（ref）
-
-| 方法 | 说明 |
-| --- | --- |
-| fetchPage({}) | 刷新表格数据 |
-| getSelectedRows() | 获取选中行 |
-| getQueryParams() | 获取当前查询参数 |
-```
-
-#### 4. Hook 文档模板（hooks/useRequest.md）
-
-```markdown
-# useRequest
-
-> 强大的异步数据请求 Hook，支持 loading、防抖、轮询等功能。
-
-## 基本信息
-
-| 属性 | 值 |
-| --- | --- |
-| 来源 | `ahooks` 或 `@/hooks/useRequest` |
-| 使用频率 | 45 次 |
-| 适用场景 | 数据请求、表单提交、定时刷新 |
-
-## 代码示例
-
-### 示例 1：手动触发请求
-
-**来源**：`src/pages/carrier-route/index.tsx`
-
-```tsx
-import { useRequest } from 'ahooks';
-
-const { loading, data, run, reset } = useRequest<CarrierListProps[]>(
-  fetchCarrierList,
-  {
-    manual: true,          // 手动触发
-    debounceInterval: 500, // 防抖 500ms
-  }
-);
-
-// 触发请求
-run(searchKeyword);
-
-// 重置数据
-reset();
-```
-
-### 示例 2：自动请求 + 依赖刷新
-
-**来源**：`src/pages/user/detail.tsx`
-
-```tsx
-const { loading, data } = useRequest(
-  () => getUserDetail(userId),
-  {
-    refreshDeps: [userId], // userId 变化时自动刷新
-  }
-);
-```
-
-### 示例 3：轮询
-
-```tsx
-const { data } = useRequest(getStatus, {
-  pollingInterval: 3000, // 每 3 秒轮询
-  pollingWhenHidden: false, // 页面隐藏时停止
-});
-```
-
-## 常用配置
-
-| 配置项 | 类型 | 说明 |
-| --- | --- | --- |
-| manual | boolean | 是否手动触发，默认 false |
-| debounceInterval | number | 防抖时间（ms） |
-| throttleInterval | number | 节流时间（ms） |
-| pollingInterval | number | 轮询间隔（ms） |
-| refreshDeps | any[] | 依赖变化时自动刷新 |
-| onSuccess | function | 成功回调 |
-| onError | function | 失败回调 |
-
-## 返回值
-
-| 属性 | 类型 | 说明 |
-| --- | --- | --- |
-| data | T | 请求结果 |
-| loading | boolean | 是否加载中 |
-| error | Error | 错误信息 |
-| run | function | 手动触发请求 |
-| reset | function | 重置状态 |
-| refresh | function | 使用上次参数重新请求 |
-```
+### 4.4 生成 inventory.md 和 DEV-GUIDE.md
 
 ---
 
-## 分析检查清单
+## 断点续传说明
 
-完成分析前，确认以下内容已生成：
+如果分析过程中断：
 
-### 必须生成的文档
+1. 下次运行时，skill 检测到 `_todo.txt` 存在且不为空
+2. 自动进入断点续传模式
+3. 跳过阶段 1，直接进入阶段 2
+4. 从 `_todo.txt` 剩余的文件继续分析
 
-- [ ] `COMPONENT-SELECTOR.md` - 组件选择器（**最重要**）
-- [ ] `inventory.md` - 完整物资清单
-- [ ] `DEV-GUIDE.md` - 开发手册入口
-- [ ] `scenarios/` - 至少包含 list.md, form.md
+如果想重新开始：
+```bash
+rm -rf .ai-docs/_todo.txt .ai-docs/_done.txt .ai-docs/_batches/
+````
 
-### 组件文档要求
+---
 
-- [ ] 每个使用超过 3 次的组件都有独立文档
-- [ ] 每个文档至少包含 2 个不同场景的使用示例
+## 完成标志
+
+当以下条件满足时，分析完成：
+
+- [ ] `_todo.txt` 为空或不存在
+- [ ] `_done.txt` 包含所有代码文件
+- [ ] `_batches/` 包含所有批次结果
+- [ ] `COMPONENT-SELECTOR.md` 已生成
+- [ ] 每个高频组件都有独立文档
+
+---
+
+## 错误处理
+
+### Token 不足
+
+如果 Token 即将耗尽：
+
+1. 完成当前批次的保存
+2. 更新 `_progress.md`
+3. 告知用户当前进度
+4. **不要跳过文件**
+
+用户下次运行时会从断点继续。
+
+### 文件读取失败
+
+如果某个文件读取失败：
+
+1. 在 `_progress.md` 中记录错误
+2. 将该文件移到 `_errors.txt`
+3. 继续处理其他文件
+
+---
+
+## 检查清单
+
+执行完成前，确认：
+
+- [ ] `_todo.txt` 为空（所有文件已处理）
+- [ ] `COMPONENT-SELECTOR.md` 存在且内容完整
+- [ ] 每个使用超过 3 次的组件都有文档
+- [ ] 每个场景都有文档
 - [ ] 示例代码是"使用代码"，不是"定义代码"
-- [ ] 示例代码包含完整 import 和关键 props
-
-### 场景文档要求
-
-- [ ] 每个场景列出推荐技术栈
-- [ ] 每个场景至少有 1 个完整示例
-- [ ] 示例来源标注清楚（文件路径）
-
-### 组件选择器要求
-
-- [ ] 按场景分类（列表页、表单页、详情页等）
-- [ ] 同类组件有对比表
-- [ ] 有明确的选择建议
 
 ---
 
 ## ⚠️ 严禁的做法
 
-- ❌ 把组件的"定义代码"当作"使用示例"
-- ❌ 只收集组件定义所在文件，忽略使用位置
-- ❌ 示例代码是整个文件或整个函数
-- ❌ 忽略第三方组件（如 antd 的 Modal、Form）
-- ❌ 没有 COMPONENT-SELECTOR.md
+- ❌ 在 `_todo.txt` 不为空时进入阶段 3
+- ❌ 跳过任何文件（"这个文件不重要"）
+- ❌ 采样分析（"分析前 100 个文件就够了"）
+- ❌ 把组件"定义代码"当作"使用示例"
+- ❌ 忽略第三方组件（antd、自定义库等）
 
 ## ✅ 正确的做法
 
+- ✅ 严格按照死循环规则执行，直到 `_todo.txt` 为空
+- ✅ 每批处理后物理删除已处理的行
 - ✅ 收集组件在其他文件中的使用代码
-- ✅ 示例代码简洁但完整，能独立理解
-- ✅ 为所有使用过的组件生成文档（包括第三方）
-- ✅ 按场景组织，帮助 AI 选择合适组件
-- ✅ 同类组件有对比和选择建议
-
----
-
-## 输出
-
-输出到项目的 `.ai-docs/` 目录：
-
-```
-.ai-docs/
-├── DEV-GUIDE.md              # 开发手册总入口
-├── COMPONENT-SELECTOR.md     # 组件选择器（核心文档）
-├── inventory.md              # 完整物资清单
-├── scenarios/                # 场景文档
-│   ├── list.md
-│   ├── form.md
-│   ├── detail.md
-│   └── modal.md
-├── components/               # 组件使用文档
-│   ├── TableTemplatePro.md
-│   ├── Form.md
-│   ├── Modal.md
-│   └── ...
-├── hooks/                    # Hook 使用文档
-│   ├── useRequest.md
-│   ├── useState.md
-│   └── ...
-└── utils/                    # 工具函数文档
-    └── ...
-```
+- ✅ 为所有使用过的组件生成文档
+- ✅ 按场景组织，帮助 AI 选择组件
