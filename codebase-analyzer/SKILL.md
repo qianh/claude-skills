@@ -195,32 +195,26 @@ find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx"
 
 ### 阶段 S1：执行定量分析脚本
 
-使用预定义的分析脚本进行批量统计。
+使用预定义的分析脚本进行批量统计。**所有临时文件输出到 `/tmp` 目录，不污染项目目录。**
 
-#### 步骤 1.1：复制脚本到项目
-
-```bash
-cp ~/.claude/skills/codebase-analyzer/assets/analyzer-scripts/codebase-scanner.js ./_codebase_scanner.js
-```
-
-#### 步骤 1.2：执行脚本
+#### 步骤 1.1：执行脚本（直接从原位置执行，无需复制）
 
 ```bash
-node _codebase_scanner.js --dir src --output _codebase_analysis.json --batch-output
+node ~/.claude/skills/codebase-analyzer/assets/analyzer-scripts/codebase-scanner.js --dir src --output /tmp/_codebase_analysis.json --batch-output
 ```
 
 如果没有 `src` 目录：
 
 ```bash
-node _codebase_scanner.js --dir . --output _codebase_analysis.json --batch-output
+node ~/.claude/skills/codebase-analyzer/assets/analyzer-scripts/codebase-scanner.js --dir . --output /tmp/_codebase_analysis.json --batch-output
 ```
 
-#### 步骤 1.3：读取分析结果
+#### 步骤 1.2：读取分析结果
 
 **只读取脚本输出的 JSON 结果**，不要打开源代码文件。
 
 ```bash
-cat _codebase_analysis.json
+cat /tmp/_codebase_analysis.json
 ```
 
 脚本输出包含：
@@ -235,24 +229,18 @@ cat _codebase_analysis.json
 
 ### 阶段 S2：执行定性抽样分析
 
-使用预定义的抽样脚本选择代表性文件。
+使用预定义的抽样脚本选择代表性文件。**所有临时文件输出到 `/tmp` 目录。**
 
-#### 步骤 2.1：复制脚本到项目
+#### 步骤 2.1：执行脚本（直接从原位置执行，无需复制）
 
 ```bash
-cp ~/.claude/skills/codebase-analyzer/assets/analyzer-scripts/sample-extractor.js ./_sample_extractor.js
+node ~/.claude/skills/codebase-analyzer/assets/analyzer-scripts/sample-extractor.js --dir src --output /tmp/_code_samples.json --max-samples 10 --analysis /tmp/_codebase_analysis.json
 ```
 
-#### 步骤 2.2：执行脚本
+#### 步骤 2.2：读取抽样结果
 
 ```bash
-node _sample_extractor.js --dir src --output _code_samples.json --max-samples 10 --analysis _codebase_analysis.json
-```
-
-#### 步骤 2.3：读取抽样结果
-
-```bash
-cat _code_samples.json
+cat /tmp/_code_samples.json
 ```
 
 抽样脚本会智能选择以下类型的代表性文件：
@@ -331,7 +319,7 @@ cat _code_samples.json
 ### 阶段 S5：清理临时文件
 
 ```bash
-rm -f _codebase_scanner.js _sample_extractor.js _codebase_analysis.json _code_samples.json _codebase_analysis_batch_*.json
+rm -f /tmp/_codebase_analysis.json /tmp/_code_samples.json /tmp/_codebase_analysis_batch_*.json
 ```
 
 ---
