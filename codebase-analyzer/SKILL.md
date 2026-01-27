@@ -5,15 +5,14 @@ description: 深度分析项目代码库，生成完整的开发指导手册。�
 
 # Codebase Analyzer
 
-分析项目代码库，生成数据驱动的开发指导手册。
+分析项目代码库，生成数据驱动的开发指导手册，包含场景索引和组件选择器。
 
 ## 核心原则
 
-1. **LLM 全量理解**：每个文件都使用 LLM（Read 工具）理解，确保不遗漏任何组件、库或 Hook。
-
-2. **多代理协作**：通过批次化分析和层级汇总，支持任意规模代码库（10000+ 文件）而不会上下文溢出。
-
-3. **数据驱动输出**：章节结构由实际代码库数据决定，不使用预定义模板。
+1. **收集使用示例，而非组件定义**：重点是"组件如何被使用"，而非"组件如何被定义"
+2. **场景驱动**：按页面类型（列表页、表单页、详情页等）组织组件，帮助 AI 根据 PRD 选择合适组件
+3. **全量覆盖**：所有被使用的组件、Hook、工具都必须有使用示例，无论使用频率高低
+4. **多代理协作**：通过批次化分析支持任意规模代码库
 
 ---
 
@@ -53,6 +52,7 @@ find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx"
 - `dist/` / `build/` / `.next/` / `.nuxt/`
 - `.git/`
 - `coverage/`
+- `.umi/`（Umi 生成文件）
 
 ### 扫描命令
 
@@ -60,31 +60,24 @@ find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx"
 **/*.{ts,tsx,js,jsx,vue,svelte}
 ```
 
-### 输出
-
-完整的文件路径列表，如：
-
-- `src/components/Button.tsx`
-- `src/pages/user/list.tsx`
-- `src/service/user.ts`
-- ...
-
 ---
 
 ## 阶段 2：批次化分析（多代理协作）
 
-**关键原则**：不遗漏任何文件，每个文件都用 LLM 理解。
+**关键原则**：提取每个文件中"使用了哪些组件/Hook"以及"如何使用的代码片段"。
 
-### 工作流程
+### ⚠️ 核心区分：定义 vs 使用
 
-```
-主 Agent
-  │
-  ├─→ 将文件列表分批（每批 10-20 个文件）
-  │
-  ├─→ 为每批创建子代理任务
-  │
-  └─→ 收集所有子代理的汇总结果
+```tsx
+// ❌ 这是"定义" - 不是我们要收集的重点
+export const TableTemplatePro = (props) => { ... }
+
+// ✅ 这是"使用" - 这才是我们要收集的示例
+<TableTemplatePro
+  columns={columns}
+  fetchPageUrl="/api/list"
+  rowKey="id"
+/>
 ```
 
 ### 子代理任务模板
@@ -93,482 +86,594 @@ find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx"
 请分析以下文件批次，返回结构化汇总：
 
 文件列表：
-- src/components/Button.tsx
-- src/components/Input.tsx
-- src/pages/user/list.tsx
-- ...
-
-分析任务：
-1. 提取所有 import 语句（包括动态 import）
-2. 提取所有 JSX 组件使用
-3. 提取所有 Hooks 调用
-4. 提取组件定义（含 Props 类型）
-5. 提取接口定义和调用
-6. 识别代码风格特征
-
-返回格式（JSON）：
-{
-  "imports": {
-    "sources": { "react": 2, "antd": 5, "@/components/Button": 1 },
-    "items": { "useState (from react)": 1, "Button (from antd)": 3 }
-  },
-  "components": {
-    "used": { "Form": 5, "Table": 2, "Button": 8 },
-    "defined": ["Button", "Input", "UserCard"]
-  },
-  "hooks": { "useState": 3, "useEffect": 1, "useRequest": 2 },
-  "apis": { "userListPost": 1, "userDetailGet": 1 },
-  "codeStyle": {
-    "naming": "PascalCase for components",
-    "export": "default export",
-    "importOrder": "third-party → internal → relative"
-  },
-  "examples": {
-    "Button": { "filePath": "src/pages/user/list.tsx", "code": "..." },
-    "useRequest": { "filePath": "src/pages/user/list.tsx", "code": "..." }
-  }
-}
-
-**重要**：
-- 不要遗漏任何 import、组件或 Hook
-- 为每个发现的项提供至少一个完整代码示例
-- 代码示例必须包含 import 语句和实际使用代码
-```
-
-### 批次分配策略
-
-| 文件数 | 每批文件数 | 说明               |
-| ------ | ---------- | ------------------ |
-| < 50   | 逐个处理   | 每个文件单独分析   |
-| 50-200 | 10 个/批   | 平衡速度和准确性   |
-| 200+   | 20 个/批   | 高效处理大规模项目 |
-
----
-
-## 阶段 3：层级汇总
-
-**当子代理数量过多时，使用层级汇总避免上下文溢出。**
-
-### 单层汇总（< 10 个子代理）
-
-```
-子代理 1 汇总 ─┐
-子代理 2 汇总 ─┤
-子代理 3 汇总 ─┼─→ 最终汇总
-...           ─┤
-子代理 N 汇总 ─┘
-```
-
-### 多层汇总（10+ 个子代理）
-
-```
-批次 1-5    → 中间汇总 A ─┐
-批次 6-10   → 中间汇总 B ─┤
-批次 11-15  → 中间汇总 C ─┼─→ 最终汇总
-...                         ─┤
-批次 N-4 到 N → 中间汇总 Z ─┘
-```
-
-### 汇总逻辑
-
-1. **合并物资清单**：所有 importSources、jsxComponents、hooks
-2. **合并使用位置**：记录每个组件/Hook 在哪些文件中被使用
-3. **去重代码示例**：相同组件保留 1-3 个最佳示例
-
-### 最终汇总输出
-
-```json
-{
-  "inventory": {
-    "importSources": {
-      "react": 120,
-      "antd": 85,
-      "@/components/TableTemplatePro": 38,
-      "@/components/MyRareWidget": 1
-    },
-    "jsxComponents": {
-      "Form": 115,
-      "Table": 89,
-      "TableTemplatePro": 38,
-      "MyRareComponent": 1
-    },
-    "hooks": {
-      "useState": 234,
-      "useRequest": 45,
-      "useMyCustomHook": 1
-    }
-  },
-  "usageLocations": {
-    "TableTemplatePro": ["src/pages/user/list.tsx", "src/pages/order/list.tsx"],
-    "MyRareComponent": ["src/pages/special/index.tsx"]
-  },
-  "examples": {
-    "TableTemplatePro": {
-      "filePath": "src/pages/user/list.tsx",
-      "code": "完整的使用代码..."
-    }
-  }
-}
-```
-
----
-
-## 阶段 4：生成数据驱动的开发文档
-
-**核心原则**：
-
-1. 章节结构由阶段 3 的汇总数据决定，不使用预定义模板
-2. 每个组件/库/Hook 的使用示例写入独立文件，便于维护和 AI 快速查找
-
-### 文件结构
-
-```
-.ai-docs/
-├── components/           # 组件使用文档
-│   ├── TableTemplatePro.md
-│   ├── MyRareComponent.md
-│   └── ...
-├── hooks/               # Hook 使用文档
-│   ├── useRequest.md
-│   ├── useMyCustomHook.md
-│   └── ...
-├── apis/                # 接口使用文档
-│   ├── user.md
-│   ├── order.md
-│   └── ...
-├── inventory.md         # 完整物资清单（索引）
-└── DEV-GUIDE.md         # 开发手册总入口
-```
-
-### 输出规则
-
-#### 规则 1：生成完整物资清单（inventory.md）
-
-```markdown
-# 项目物资清单
-
-生成时间：2024-01-27
-
-## 导入来源（按使用频率排序）
-
-| 来源                          | 使用次数 | 类型       | 文档                                               |
-| ----------------------------- | -------- | ---------- | -------------------------------------------------- |
-| antd                          | 156      | UI 库      | -                                                  |
-| @/components/TableTemplatePro | 38       | 自定义组件 | [TableTemplatePro](components/TableTemplatePro.md) |
-| @/service/user                | 25       | 接口       | [user](apis/user.md)                               |
-| @/components/MyRareWidget     | 1        | 自定义组件 | [MyRareWidget](components/MyRareWidget.md)         |
-
-## JSX 组件（按使用频率排序）
-
-| 组件             | 使用次数 | 文档                                                  |
-| ---------------- | -------- | ----------------------------------------------------- |
-| Form             | 115      | - (第三方库)                                          |
-| TableTemplatePro | 38       | [TableTemplatePro.md](components/TableTemplatePro.md) |
-| MyRareComponent  | 1        | [MyRareComponent.md](components/MyRareComponent.md)   |
-
-## Hooks（按使用频率排序）
-
-| Hook            | 使用次数 | 文档                                           |
-| --------------- | -------- | ---------------------------------------------- |
-| useState        | 234      | - (React 内置)                                 |
-| useRequest      | 45       | [useRequest.md](hooks/useRequest.md)           |
-| useMyCustomHook | 1        | [useMyCustomHook.md](hooks/useMyCustomHook.md) |
-```
-
-#### 规则 2：为每个组件生成独立文档
-
-**遍历物资清单中的每一项，生成独立的 Markdown 文件。**
-
-##### 组件文档模板
-
-文件路径：`.ai-docs/components/TableTemplatePro.md`
-
-```markdown
-# TableTemplatePro
-
-**来源**：`@/components/TableTemplatePro`
-
-**使用频率**：38 次
-
-**使用位置**：
-
-- src/pages/user/list.tsx
-- src/pages/order/list.tsx
-- src/pages/product/list.tsx
-
-## 代码示例
-
-### 示例 1：用户列表页
-
-**来源**：`src/pages/user/list.tsx`
-
-\`\`\`tsx
-import { TableTemplatePro } from '@/components/TableTemplatePro';
-import { userListPost } from '@/service/user';
-
-const UserList = () => {
-const [loading, setLoading] = useState(false);
-
-const columns = [
-{ title: '姓名', dataIndex: 'name', key: 'name' },
-{ title: '邮箱', dataIndex: 'email', key: 'email' },
-{ title: '状态', dataIndex: 'status', key: 'status' },
-];
-
-return (
-<TableTemplatePro
-      columns={columns}
-      request={userListPost}
-      rowKey="id"
-      loading={loading}
-    />
-);
-};
-\`\`\`
-
-### 示例 2：订单列表页（带筛选）
-
-**来源**：`src/pages/order/list.tsx`
-
-\`\`\`tsx
-（如果有不同的使用方式，提供第二个示例）
-\`\`\`
-```
-
-##### Hook 文档模板
-
-文件路径：`.ai-docs/hooks/useRequest.md`
-
-```markdown
-# useRequest
-
-**来源**：`@/hooks/useRequest`
-
-**使用频率**：45 次
-
-**使用位置**：
-
 - src/pages/user/list.tsx
 - src/pages/order/detail.tsx
 - ...
 
-## 定义
+分析任务：
 
-**来源**：`src/hooks/useRequest.ts`
+1. **识别页面场景**：根据文件路径和内容判断页面类型
+   - 列表页（list/index + 表格组件）
+   - 详情页（detail + 描述/卡片组件）
+   - 表单页（form/add/edit + 表单组件）
+   - 弹窗组件（Modal/Drawer）
+   - 其他
 
-\`\`\`tsx
-export function useRequest<T>(
-apiFn: (...args: any[]) => Promise<T>,
-options?: UseRequestOptions<T>
-) {
-const [loading, setLoading] = useState(false);
-const [data, setData] = useState<T | null>(null);
+2. **提取组件使用**：找出 JSX 中使用的所有组件，提取使用代码片段
+   - 包含完整的 props 配置
+   - 代码片段应该能独立理解
+   - 优先提取配置丰富、有代表性的使用
 
-const run = useCallback(async (...args: any[]) => {
-setLoading(true);
-try {
-const result = await apiFn(...args);
-setData(result);
-return result;
-} finally {
-setLoading(false);
+3. **提取 Hook 使用**：找出所有 Hook 调用，提取使用代码片段
+   - 包含 Hook 的参数和返回值解构
+   - 包含 Hook 结果的实际使用
+
+4. **提取工具函数使用**：找出所有工具函数调用
+
+返回格式（JSON）：
+{
+  "filePath": "src/pages/user/list.tsx",
+  "scenario": {
+    "type": "list",  // list | detail | form | modal | other
+    "description": "用户列表页，支持搜索、分页、批量操作"
+  },
+  "componentUsages": [
+    {
+      "name": "TableTemplatePro",
+      "importFrom": "@dzg/gm-template",
+      "code": "<TableTemplatePro\n  title=\"用户列表\"\n  fetchPageUrl=\"/api/user/list\"\n  columns={columns}\n  rowKey=\"id\"\n  displayHeader={true}\n  tableOperations={buttonList}\n/>",
+      "props": ["title", "fetchPageUrl", "columns", "rowKey", "displayHeader", "tableOperations"],
+      "description": "带搜索和批量操作的用户列表"
+    },
+    {
+      "name": "Modal",
+      "importFrom": "antd",
+      "code": "<Modal\n  visible={visible}\n  title=\"编辑用户\"\n  onOk={handleSubmit}\n  onCancel={handleClose}\n>\n  <Form>...</Form>\n</Modal>",
+      "props": ["visible", "title", "onOk", "onCancel"],
+      "description": "编辑用户的弹窗表单"
+    }
+  ],
+  "hookUsages": [
+    {
+      "name": "useRequest",
+      "importFrom": "ahooks",
+      "code": "const { loading, data, run } = useRequest(getUserList, {\n  manual: true,\n  debounceInterval: 500\n});",
+      "description": "手动触发的防抖请求"
+    }
+  ],
+  "utilUsages": [
+    {
+      "name": "formatDate",
+      "importFrom": "@/utils/date",
+      "code": "formatDate(record.createTime, 'YYYY-MM-DD HH:mm')",
+      "description": "格式化日期时间"
+    }
+  ]
 }
-}, [apiFn]);
 
-return { loading, data, run };
+**重要规则**：
+1. 只收集"使用"代码，不收集"定义"代码
+2. 代码片段必须是实际的 JSX 或调用代码，不是整个函数
+3. 代码片段应该简洁但完整，能独立理解
+4. 每个组件/Hook 在同一文件中可能有多个不同用法，都要收集
+5. 必须标注 importFrom 来源
+```
+
+### 批次分配策略
+
+| 文件数   | 每批文件数 | 说明               |
+| -------- | ---------- | ------------------ |
+| < 50     | 逐个处理   | 每个文件单独分析   |
+| 50-200   | 10 个/批   | 平衡速度和准确性   |
+| 200+     | 20 个/批   | 高效处理大规模项目 |
+
+---
+
+## 阶段 3：汇总与分类
+
+### 汇总数据结构
+
+```json
+{
+  "scenarios": {
+    "list": {
+      "description": "列表页场景",
+      "files": ["src/pages/user/list.tsx", "src/pages/order/list.tsx"],
+      "components": ["TableTemplatePro", "SearchForm", "BatchOperation"],
+      "hooks": ["useRequest", "useState"]
+    },
+    "form": {
+      "description": "表单页场景",
+      "files": ["src/pages/user/add.tsx"],
+      "components": ["Form", "DzgForm", "Select"],
+      "hooks": ["useForm", "useRequest"]
+    }
+  },
+  "componentIndex": {
+    "TableTemplatePro": {
+      "category": "表格类",
+      "importFrom": "@dzg/gm-template",
+      "usageCount": 61,
+      "scenarios": ["list"],
+      "alternatives": ["Table", "ProTable"],
+      "usages": [
+        {
+          "filePath": "src/pages/user/list.tsx",
+          "scenario": "list",
+          "code": "...",
+          "props": ["title", "fetchPageUrl", "columns"],
+          "description": "用户列表页"
+        }
+      ]
+    }
+  },
+  "hookIndex": {
+    "useRequest": {
+      "importFrom": "ahooks",
+      "usageCount": 45,
+      "scenarios": ["list", "form", "detail"],
+      "usages": [...]
+    }
+  }
 }
-\`\`\`
+```
 
-## 使用示例
+### 组件分类规则
 
-### 示例 1：基础用法
+根据组件名称和使用场景自动分类：
+
+| 分类     | 关键词                                       |
+| -------- | -------------------------------------------- |
+| 表格类   | Table, List, Grid, DataView                  |
+| 表单类   | Form, Input, Select, DatePicker, Upload      |
+| 弹窗类   | Modal, Drawer, Popover, Popconfirm           |
+| 布局类   | Row, Col, Space, Flex, Layout, Card          |
+| 导航类   | Menu, Tabs, Breadcrumb, Steps                |
+| 反馈类   | Alert, Message, Notification, Spin, Skeleton |
+| 数据展示 | Descriptions, Statistic, Tag, Badge          |
+| 业务组件 | 其他自定义组件                               |
+
+### 场景识别规则
+
+| 场景     | 识别规则                                             |
+| -------- | ---------------------------------------------------- |
+| list     | 路径含 list/index + 使用表格组件                     |
+| detail   | 路径含 detail + 使用 Descriptions/Card               |
+| form     | 路径含 form/add/edit/create + 使用表单组件           |
+| modal    | 文件导出 Modal 组件或主要内容是 Modal                |
+| dashboard| 路径含 dashboard/home + 使用统计/图表组件            |
+
+---
+
+## 阶段 4：生成文档
+
+### 输出目录结构
+
+```
+.ai-docs/
+├── DEV-GUIDE.md              # 开发手册总入口
+├── COMPONENT-SELECTOR.md     # 组件选择器（帮助 AI 选择组件）
+├── inventory.md              # 完整物资清单
+├── scenarios/                # 场景文档
+│   ├── list.md              # 列表页开发指南
+│   ├── form.md              # 表单页开发指南
+│   ├── detail.md            # 详情页开发指南
+│   └── modal.md             # 弹窗开发指南
+├── components/               # 组件使用文档
+│   ├── TableTemplatePro.md
+│   ├── Form.md
+│   └── ...
+├── hooks/                    # Hook 使用文档
+│   ├── useRequest.md
+│   └── ...
+└── utils/                    # 工具函数文档
+    ├── formatDate.md
+    └── ...
+```
+
+### 文档模板
+
+#### 1. 组件选择器（COMPONENT-SELECTOR.md）
+
+**这是最重要的文档，帮助 AI 根据 PRD 需求选择合适的组件。**
+
+```markdown
+# 组件选择器
+
+> 根据开发需求快速找到合适的组件。本文档按场景和功能分类，帮助你在开发新功能时选择正确的组件。
+
+## 按场景选择
+
+### 我要开发列表页
+
+| 需求 | 推荐组件 | 使用频率 | 特点 | 文档 |
+| --- | --- | --- | --- | --- |
+| 标准数据列表 | TableTemplatePro | 61次 | 内置分页、搜索、批量操作 | [查看](components/TableTemplatePro.md) |
+| 简单表格 | Table | 54次 | Antd 原生表格，需手动处理分页 | [查看](components/Table.md) |
+| 虚拟滚动大数据 | VirtualTable | 3次 | 适合 1000+ 行数据 | [查看](components/VirtualTable.md) |
+
+**选择建议**：
+- 管理后台列表页 → TableTemplatePro（首选）
+- 简单展示表格 → Table
+- 大数据量 → VirtualTable
+
+### 我要开发表单页
+
+| 需求 | 推荐组件 | 使用频率 | 特点 | 文档 |
+| --- | --- | --- | --- | --- |
+| 标准表单 | Form + Form.Item | 115次 | Antd 原生表单 | [查看](components/Form.md) |
+| 动态表单 | DzgForm | 30次 | 支持 JSON Schema 配置 | [查看](components/DzgForm.md) |
+
+### 我要开发详情页
+
+...
+
+### 我要开发弹窗
+
+...
+
+## 按功能选择
+
+### 数据请求
+
+| 需求 | 推荐 Hook | 使用频率 | 特点 | 文档 |
+| --- | --- | --- | --- | --- |
+| 普通请求 | useRequest | 45次 | 支持 loading、防抖、轮询 | [查看](hooks/useRequest.md) |
+| 表格数据 | useAntdTable | 12次 | 专为表格设计，自动分页 | [查看](hooks/useAntdTable.md) |
+
+### 状态管理
+
+...
+
+### 权限控制
+
+| 需求 | 推荐组件 | 使用频率 | 特点 | 文档 |
+| --- | --- | --- | --- | --- |
+| 按钮权限 | PermissionWrapper | 54次 | 包裹需要权限控制的元素 | [查看](components/PermissionWrapper.md) |
+
+## 同类组件对比
+
+### 表格组件对比
+
+| 组件 | 来源 | 内置搜索 | 内置分页 | 批量操作 | 适用场景 |
+| --- | --- | --- | --- | --- | --- |
+| TableTemplatePro | @dzg/gm-template | ✅ | ✅ | ✅ | 管理后台列表页 |
+| Table | antd | ❌ | 手动 | ❌ | 简单数据展示 |
+| ProTable | @ant-design/pro-table | ✅ | ✅ | ✅ | 通用管理后台 |
+
+### 表单组件对比
+
+| 组件 | 来源 | 动态字段 | 校验 | 布局 | 适用场景 |
+| --- | --- | --- | --- | --- | --- |
+| Form | antd | 手动 | ✅ | 灵活 | 自定义表单 |
+| DzgForm | @dzg/dzg-form | ✅ JSON | ✅ | 固定 | 配置化表单 |
+```
+
+#### 2. 场景文档模板（scenarios/list.md）
+
+```markdown
+# 列表页开发指南
+
+> 本文档介绍如何开发列表页，包含推荐组件、代码模式和完整示例。
+
+## 推荐技术栈
+
+| 功能 | 组件/Hook | 文档 |
+| --- | --- | --- |
+| 表格 | TableTemplatePro | [查看](../components/TableTemplatePro.md) |
+| 数据请求 | useRequest | [查看](../hooks/useRequest.md) |
+| 批量操作 | BatchOperation | [查看](../components/BatchOperation.md) |
+| 权限控制 | PermissionWrapper | [查看](../components/PermissionWrapper.md) |
+
+## 完整示例
+
+### 示例 1：标准列表页（用户管理）
 
 **来源**：`src/pages/user/list.tsx`
 
-\`\`\`tsx
-import { useRequest } from '@/hooks/useRequest';
-import { userListPost } from '@/service/user';
+```tsx
+import { TableTemplatePro } from '@dzg/gm-template';
+import { PermissionWrapper } from '@/components/PermissionWrapper';
 
-const UserList = () => {
-const { loading, data, run } = useRequest(userListPost);
+const UserList: React.FC = () => {
+  const tableRef = useRef<any>(null);
+  const [selectedRows, setSelectedRows] = useState<any[]>([]);
 
-useEffect(() => {
-run({ page: 1, pageSize: 10 });
-}, []);
+  const columns = [
+    { title: '用户名', dataIndex: 'username', key: 'username' },
+    { title: '邮箱', dataIndex: 'email', key: 'email' },
+    { title: '状态', dataIndex: 'status', key: 'status' },
+  ];
 
-return <Table loading={loading} dataSource={data?.list} />;
+  const buttonList = [
+    <PermissionWrapper key="add" permission="user:add">
+      <Button type="primary" onClick={() => handleAdd()}>新增</Button>
+    </PermissionWrapper>,
+    <Button key="export" onClick={() => handleExport()}>导出</Button>,
+  ];
+
+  return (
+    <TableTemplatePro
+      ref={tableRef}
+      title="用户列表"
+      columns={columns}
+      fetchPageUrl="/api/user/list"
+      rowKey="id"
+      displayHeader={true}
+      displayCommonSetting={true}
+      tableOperations={buttonList}
+      onSelectChange={({ selectedRows }) => setSelectedRows(selectedRows)}
+    />
+  );
 };
-\`\`\`
 ```
 
-##### API 文档模板
+### 示例 2：带复杂筛选的列表页
 
-文件路径：`.ai-docs/apis/user.md`
+**来源**：`src/pages/order/list.tsx`
+
+...
+
+## 常见模式
+
+### 刷新列表
+
+```tsx
+tableRef.current?.fetchPage({});
+```
+
+### 获取选中行
+
+```tsx
+const selectedRows = tableRef.current?.getSelectedRows();
+```
+
+### 自定义单元格渲染
+
+```tsx
+const cellRenderer = ({ cellData, column, rowData }) => {
+  if (column.dataIndex === 'status') {
+    return <Tag color={statusColorMap[cellData]}>{cellData}</Tag>;
+  }
+  return cellData;
+};
+```
+```
+
+#### 3. 组件文档模板（components/TableTemplatePro.md）
 
 ```markdown
-# user 接口模块
+# TableTemplatePro
 
-**定义位置**：`src/service/user.ts`
+> 企业级表格模板组件，内置搜索、分页、批量操作等功能。
 
-## 接口列表
+## 基本信息
 
-| 接口           | 说明         | 使用次数 |
-| -------------- | ------------ | -------- |
-| userListPost   | 获取用户列表 | 15       |
-| userDetailGet  | 获取用户详情 | 8        |
-| userCreatePost | 创建用户     | 3        |
+| 属性 | 值 |
+| --- | --- |
+| 来源 | `@dzg/gm-template` |
+| 使用频率 | 61 次 |
+| 适用场景 | 列表页 |
+| 同类组件 | Table, ProTable |
 
-## 接口定义
+## 使用场景
 
-**来源**：`src/service/user.ts`
+- ✅ 管理后台数据列表
+- ✅ 需要搜索、分页、批量操作
+- ✅ 需要列设置、视图切换
+- ❌ 简单数据展示（用 Table）
+- ❌ 树形数据（考虑 TreeTable）
 
-\`\`\`typescript
-import request from '@/service/request';
+## 代码示例
 
-export function userListPost(params: UserListParams) {
-return request({
-url: '/api/user/list',
-method: 'POST',
-data: params,
-});
-}
+### 示例 1：基础列表
 
-export function userDetailGet(id: number) {
-return request({
-url: `/api/user/detail/${id}`,
-method: 'GET',
-});
-}
-\`\`\`
+**来源**：`src/pages/carrier-route/index.tsx`
+**场景**：简单的 CRUD 列表
 
-## 使用示例
+```tsx
+import { TableTemplatePro } from '@dzg/gm-template';
 
-### userListPost
-
-**来源**：`src/pages/user/list.tsx`
-
-\`\`\`tsx
-import { userListPost } from '@/service/user';
-
-const { data, run } = useRequest(userListPost);
-run({ page: 1, pageSize: 10 });
-\`\`\`
+<TableTemplatePro
+  title="船公司航线"
+  displayHeader={true}
+  displayCommonSetting={true}
+  fetchPageUrl="/dzg-orgbase-rest/baseCarrierRoute/pagedQuery"
+  rowKey="id"
+  columns={columns}
+  cellRenderer={cellRenderer}
+  tableOperations={buttonList}
+  onSelectChange={row => setChecked(row.selectedRows.map(item => item.id))}
+/>
 ```
 
-#### 规则 3：生成总入口文档（DEV-GUIDE.md）
+### 示例 2：复杂配置
 
-**提供快速导航和项目概览，详细内容链接到独立文档。**
+**来源**：`src/pages/order-list/index.tsx`
+**场景**：带自定义渲染、行展开、双击跳转的订单列表
+
+```tsx
+<TableTemplatePro
+  ref={tableRef}
+  title="订单列表"
+  displayHeader={true}
+  displayView={true}
+  displayCommonSetting={true}
+  defaultQueryParams={queryParams}
+  expandColumnKey="businessNo"
+  expandedRowKeys={expandedRowKeys}
+  onExpandedRowsChange={setExpandedRowKeys}
+  cellRendererMini={getCellRendererMini({ handleClick })}
+  onRowDoubleClick={({ rowData }) => {
+    window.open(`/detail?id=${rowData.casenumber}`, '_blank');
+  }}
+  canCellCopy
+  rowClassName={rowCustomizedStyle}
+  fetchPageUrl="/api/order/list"
+  rowKey="casenumber"
+  tableOperations={buttonList}
+  renderSelectedSummaryInfo={renderTeu}
+  isColumnFilterable
+/>
+```
+
+## 常用 Props
+
+| Prop | 类型 | 说明 | 必填 |
+| --- | --- | --- | --- |
+| title | string | 表格标题 | 是 |
+| fetchPageUrl | string | 数据接口地址 | 是 |
+| columns | Column[] | 列配置 | 是 |
+| rowKey | string | 行唯一标识字段 | 是 |
+| displayHeader | boolean | 显示头部 | 否 |
+| displayCommonSetting | boolean | 显示设置按钮 | 否 |
+| tableOperations | ReactNode[] | 操作按钮 | 否 |
+| cellRenderer | function | 单元格渲染器 | 否 |
+| onSelectChange | function | 选中行变化回调 | 否 |
+
+## 常用方法（ref）
+
+| 方法 | 说明 |
+| --- | --- |
+| fetchPage({}) | 刷新表格数据 |
+| getSelectedRows() | 获取选中行 |
+| getQueryParams() | 获取当前查询参数 |
+```
+
+#### 4. Hook 文档模板（hooks/useRequest.md）
 
 ```markdown
-# {项目名称} 开发手册
+# useRequest
 
-> 本文档由 AI 自动分析生成，包含项目中所有组件、Hook 和接口的使用文档。
-> 生成时间：{生成时间}
+> 强大的异步数据请求 Hook，支持 loading、防抖、轮询等功能。
 
-## 快速导航
+## 基本信息
 
-| 我想...          | 查看文档                     |
-| ---------------- | ---------------------------- |
-| 查看完整物资清单 | [inventory.md](inventory.md) |
-| 查找组件用法     | [components/](components/)   |
-| 查找 Hook 用法   | [hooks/](hooks/)             |
-| 查找接口用法     | [apis/](apis/)               |
+| 属性 | 值 |
+| --- | --- |
+| 来源 | `ahooks` 或 `@/hooks/useRequest` |
+| 使用频率 | 45 次 |
+| 适用场景 | 数据请求、表单提交、定时刷新 |
 
-## 项目概览
+## 代码示例
 
-### 技术栈
+### 示例 1：手动触发请求
 
-| 类别     | 技术            | 版本   |
-| -------- | --------------- | ------ |
-| 框架     | {React/Vue}     | {版本} |
-| UI 库    | {Ant Design}    | {版本} |
-| 状态管理 | {Redux/Zustand} | {版本} |
-| 构建工具 | {Vite/Webpack}  | {版本} |
+**来源**：`src/pages/carrier-route/index.tsx`
 
-### 目录结构
+```tsx
+import { useRequest } from 'ahooks';
+
+const { loading, data, run, reset } = useRequest<CarrierListProps[]>(
+  fetchCarrierList,
+  {
+    manual: true,          // 手动触发
+    debounceInterval: 500, // 防抖 500ms
+  }
+);
+
+// 触发请求
+run(searchKeyword);
+
+// 重置数据
+reset();
 ```
 
-src/
-├── components/ # 公共组件
-├── pages/ # 页面
-├── hooks/ # 自定义 Hooks
-├── service/ # API 接口
-├── store/ # 状态管理
-└── utils/ # 工具函数
+### 示例 2：自动请求 + 依赖刷新
 
+**来源**：`src/pages/user/detail.tsx`
+
+```tsx
+const { loading, data } = useRequest(
+  () => getUserDetail(userId),
+  {
+    refreshDeps: [userId], // userId 变化时自动刷新
+  }
+);
 ```
 
-## 常用组件速查
+### 示例 3：轮询
 
-| 组件             | 使用次数 | 文档                                 |
-| ---------------- | -------- | ------------------------------------ |
-| TableTemplatePro | 38       | [查看](components/TableTemplatePro.md) |
-| MyRareComponent  | 1        | [查看](components/MyRareComponent.md)  |
-
-## 常用 Hooks 速查
-
-| Hook            | 使用次数 | 文档                               |
-| --------------- | -------- | ---------------------------------- |
-| useRequest      | 45       | [查看](hooks/useRequest.md)         |
-| useMyCustomHook | 1        | [查看](hooks/useMyCustomHook.md)    |
-
-## 接口模块速查
-
-| 模块 | 接口数量 | 文档                    |
-| ---- | -------- | ----------------------- |
-| user | 3        | [查看](apis/user.md)    |
-| order| 5        | [查看](apis/order.md)   |
-
----
-
-**详细文档请查看对应的独立文件。**
+```tsx
+const { data } = useRequest(getStatus, {
+  pollingInterval: 3000, // 每 3 秒轮询
+  pollingWhenHidden: false, // 页面隐藏时停止
+});
 ```
 
-### ⚠️ 禁止的做法
+## 常用配置
 
-- ❌ 使用预定义的章节列表（"如何新建页面"、"如何创建表单"）
-- ❌ 只输出高频组件，忽略低频组件
-- ❌ 用统计数字代替代码示例
-- ❌ 遗漏任何组件、库或 Hook
-- ❌ 所有内容塞到一个文件
+| 配置项 | 类型 | 说明 |
+| --- | --- | --- |
+| manual | boolean | 是否手动触发，默认 false |
+| debounceInterval | number | 防抖时间（ms） |
+| throttleInterval | number | 节流时间（ms） |
+| pollingInterval | number | 轮询间隔（ms） |
+| refreshDeps | any[] | 依赖变化时自动刷新 |
+| onSuccess | function | 成功回调 |
+| onError | function | 失败回调 |
 
-### ✅ 正确的做法
+## 返回值
 
-- ✅ 遍历物资清单中的每一项
-- ✅ 即使只使用 1 次的组件，也生成独立文档
-- ✅ 每个组件/Hook/API 都有独立的 Markdown 文件
-- ✅ 总入口文档提供导航链接
-- ✅ 所有代码示例从实际文件中提取，标注来源
-
----
-
-## Shell 工具辅助
-
-对于简单的统计查询，可以使用 grep/ripgrep 加速。
-
-### 示例
-
-| 需求            | 命令                                                 |
-| --------------- | ---------------------------------------------------- | ------ |
-| 确认路由库      | `grep -r "react-router" package.json src/`           |
-| 统计文件数量    | `find src -name "\*.tsx"                             | wc -l` |
-| 快速查找 import | `grep -rn "import.*from.*@/" src/ --include="*.ts*"` |
-
-**注意**：Shell 工具仅用于辅助，最终分析必须用 LLM 理解每个文件。
+| 属性 | 类型 | 说明 |
+| --- | --- | --- |
+| data | T | 请求结果 |
+| loading | boolean | 是否加载中 |
+| error | Error | 错误信息 |
+| run | function | 手动触发请求 |
+| reset | function | 重置状态 |
+| refresh | function | 使用上次参数重新请求 |
+```
 
 ---
 
 ## 分析检查清单
 
-完成分析前，确认以下信息已提取：
+完成分析前，确认以下内容已生成：
 
-- [ ] 完整的物资清单（所有 import、组件、Hook）
-- [ ] 每个组件的使用示例（包括只用 1 次的）
-- [ ] 每个 Hook 的使用示例（包括只用 1 次的）
-- [ ] 每个接口的定义和调用示例
-- [ ] 代码风格特征（命名、导出、导入顺序）
-- [ ] 技术栈版本信息
-- [ ] 项目目录结构
+### 必须生成的文档
+
+- [ ] `COMPONENT-SELECTOR.md` - 组件选择器（**最重要**）
+- [ ] `inventory.md` - 完整物资清单
+- [ ] `DEV-GUIDE.md` - 开发手册入口
+- [ ] `scenarios/` - 至少包含 list.md, form.md
+
+### 组件文档要求
+
+- [ ] 每个使用超过 3 次的组件都有独立文档
+- [ ] 每个文档至少包含 2 个不同场景的使用示例
+- [ ] 示例代码是"使用代码"，不是"定义代码"
+- [ ] 示例代码包含完整 import 和关键 props
+
+### 场景文档要求
+
+- [ ] 每个场景列出推荐技术栈
+- [ ] 每个场景至少有 1 个完整示例
+- [ ] 示例来源标注清楚（文件路径）
+
+### 组件选择器要求
+
+- [ ] 按场景分类（列表页、表单页、详情页等）
+- [ ] 同类组件有对比表
+- [ ] 有明确的选择建议
+
+---
+
+## ⚠️ 严禁的做法
+
+- ❌ 把组件的"定义代码"当作"使用示例"
+- ❌ 只收集组件定义所在文件，忽略使用位置
+- ❌ 示例代码是整个文件或整个函数
+- ❌ 忽略第三方组件（如 antd 的 Modal、Form）
+- ❌ 没有 COMPONENT-SELECTOR.md
+
+## ✅ 正确的做法
+
+- ✅ 收集组件在其他文件中的使用代码
+- ✅ 示例代码简洁但完整，能独立理解
+- ✅ 为所有使用过的组件生成文档（包括第三方）
+- ✅ 按场景组织，帮助 AI 选择合适组件
+- ✅ 同类组件有对比和选择建议
 
 ---
 
@@ -578,18 +683,23 @@ src/
 
 ```
 .ai-docs/
-├── DEV-GUIDE.md         # 总入口文档
-├── inventory.md         # 完整物资清单（索引）
-├── components/          # 组件文档目录
+├── DEV-GUIDE.md              # 开发手册总入口
+├── COMPONENT-SELECTOR.md     # 组件选择器（核心文档）
+├── inventory.md              # 完整物资清单
+├── scenarios/                # 场景文档
+│   ├── list.md
+│   ├── form.md
+│   ├── detail.md
+│   └── modal.md
+├── components/               # 组件使用文档
 │   ├── TableTemplatePro.md
-│   ├── MyRareComponent.md
+│   ├── Form.md
+│   ├── Modal.md
 │   └── ...
-├── hooks/              # Hook 文档目录
+├── hooks/                    # Hook 使用文档
 │   ├── useRequest.md
-│   ├── useMyCustomHook.md
+│   ├── useState.md
 │   └── ...
-└── apis/               # API 文档目录
-    ├── user.md
-    ├── order.md
+└── utils/                    # 工具函数文档
     └── ...
 ```
