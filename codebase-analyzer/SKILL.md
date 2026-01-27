@@ -213,65 +213,94 @@ find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx"
 
 ---
 
-## 阶段 4：生成数据驱动的开发手册
+## 阶段 4：生成数据驱动的开发文档
 
-**核心原则**：章节结构由阶段 3 的汇总数据决定，不使用预定义模板。
+**核心原则**：
+
+1. 章节结构由阶段 3 的汇总数据决定，不使用预定义模板
+2. 每个组件/库/Hook 的使用示例写入独立文件，便于维护和 AI 快速查找
+
+### 文件结构
+
+```
+docs/
+├── components/           # 组件使用文档
+│   ├── TableTemplatePro.md
+│   ├── MyRareComponent.md
+│   └── ...
+├── hooks/               # Hook 使用文档
+│   ├── useRequest.md
+│   ├── useMyCustomHook.md
+│   └── ...
+├── apis/                # 接口使用文档
+│   ├── user.md
+│   ├── order.md
+│   └── ...
+├── inventory.md         # 完整物资清单（索引）
+└── DEV-GUIDE.md         # 开发手册总入口
+```
 
 ### 输出规则
 
-#### 规则 1：完整物资清单
-
-首先输出完整的物资清单，让读者知道项目用了什么。
+#### 规则 1：生成完整物资清单（inventory.md）
 
 ```markdown
-## 项目物资清单
+# 项目物资清单
 
-### 导入来源（按使用频率排序）
+生成时间：2024-01-27
 
-| 来源                          | 使用次数 | 类型       |
-| ----------------------------- | -------- | ---------- |
-| antd                          | 156      | UI 库      |
-| @/components/TableTemplatePro | 38       | 自定义组件 |
-| @/service/user                | 25       | 接口       |
-| ...                           | ...      | ...        |
-| @/components/MyRareWidget     | 1        | 自定义组件 |
+## 导入来源（按使用频率排序）
 
-### JSX 组件（按使用频率排序）
+| 来源                          | 使用次数 | 类型       | 文档                                               |
+| ----------------------------- | -------- | ---------- | -------------------------------------------------- |
+| antd                          | 156      | UI 库      | -                                                  |
+| @/components/TableTemplatePro | 38       | 自定义组件 | [TableTemplatePro](components/TableTemplatePro.md) |
+| @/service/user                | 25       | 接口       | [user](apis/user.md)                               |
+| @/components/MyRareWidget     | 1        | 自定义组件 | [MyRareWidget](components/MyRareWidget.md)         |
 
-| 组件             | 使用次数 |
-| ---------------- | -------- |
-| Form             | 115      |
-| TableTemplatePro | 38       |
-| ...              | ...      |
-| MyRareComponent  | 1        |
+## JSX 组件（按使用频率排序）
 
-### Hooks（按使用频率排序）
+| 组件             | 使用次数 | 文档                                                  |
+| ---------------- | -------- | ----------------------------------------------------- |
+| Form             | 115      | - (第三方库)                                          |
+| TableTemplatePro | 38       | [TableTemplatePro.md](components/TableTemplatePro.md) |
+| MyRareComponent  | 1        | [MyRareComponent.md](components/MyRareComponent.md)   |
 
-| Hook            | 使用次数 |
-| --------------- | -------- |
-| useState        | 234      |
-| useRequest      | 45       |
-| useMyCustomHook | 1        |
+## Hooks（按使用频率排序）
+
+| Hook            | 使用次数 | 文档                                           |
+| --------------- | -------- | ---------------------------------------------- |
+| useState        | 234      | - (React 内置)                                 |
+| useRequest      | 45       | [useRequest.md](hooks/useRequest.md)           |
+| useMyCustomHook | 1        | [useMyCustomHook.md](hooks/useMyCustomHook.md) |
 ```
 
-#### 规则 2：为每个物资项提供使用示例
+#### 规则 2：为每个组件生成独立文档
 
-**遍历物资清单中的每一项，提供完整代码示例。**
+**遍历物资清单中的每一项，生成独立的 Markdown 文件。**
+
+##### 组件文档模板
+
+文件路径：`docs/components/TableTemplatePro.md`
 
 ```markdown
-## 组件使用示例
-
-### TableTemplatePro（使用 38 次）
+# TableTemplatePro
 
 **来源**：`@/components/TableTemplatePro`
+
+**使用频率**：38 次
 
 **使用位置**：
 
 - src/pages/user/list.tsx
 - src/pages/order/list.tsx
-- ...
+- src/pages/product/list.tsx
 
-**代码示例**（来自 `src/pages/user/list.tsx`）：
+## 代码示例
+
+### 示例 1：用户列表页
+
+**来源**：`src/pages/user/list.tsx`
 
 \`\`\`tsx
 import { TableTemplatePro } from '@/components/TableTemplatePro';
@@ -283,6 +312,7 @@ const [loading, setLoading] = useState(false);
 const columns = [
 { title: '姓名', dataIndex: 'name', key: 'name' },
 { title: '邮箱', dataIndex: 'email', key: 'email' },
+{ title: '状态', dataIndex: 'status', key: 'status' },
 ];
 
 return (
@@ -290,40 +320,70 @@ return (
       columns={columns}
       request={userListPost}
       rowKey="id"
+      loading={loading}
     />
 );
 };
 \`\`\`
 
----
+### 示例 2：订单列表页（带筛选）
 
-### MyRareComponent（使用 1 次）
-
-**来源**：`@/components/MyRareComponent`
-
-**使用位置**：
-
-- src/pages/special/index.tsx
-
-**代码示例**（来自 `src/pages/special/index.tsx`）：
+**来源**：`src/pages/order/list.tsx`
 
 \`\`\`tsx
-import { MyRareComponent } from '@/components/MyRareComponent';
-
-const SpecialPage = () => {
-return <MyRareComponent prop1="value1" prop2={123} />;
-};
+（如果有不同的使用方式，提供第二个示例）
 \`\`\`
 ```
 
-#### 规则 3：为每个 Hook 提供使用示例
+##### Hook 文档模板
+
+文件路径：`docs/hooks/useRequest.md`
 
 ```markdown
-## Hooks 使用示例
+# useRequest
 
-### useRequest（使用 45 次）
+**来源**：`@/hooks/useRequest`
 
-**代码示例**（来自 `src/pages/user/list.tsx`）：
+**使用频率**：45 次
+
+**使用位置**：
+
+- src/pages/user/list.tsx
+- src/pages/order/detail.tsx
+- ...
+
+## 定义
+
+**来源**：`src/hooks/useRequest.ts`
+
+\`\`\`tsx
+export function useRequest<T>(
+apiFn: (...args: any[]) => Promise<T>,
+options?: UseRequestOptions<T>
+) {
+const [loading, setLoading] = useState(false);
+const [data, setData] = useState<T | null>(null);
+
+const run = useCallback(async (...args: any[]) => {
+setLoading(true);
+try {
+const result = await apiFn(...args);
+setData(result);
+return result;
+} finally {
+setLoading(false);
+}
+}, [apiFn]);
+
+return { loading, data, run };
+}
+\`\`\`
+
+## 使用示例
+
+### 示例 1：基础用法
+
+**来源**：`src/pages/user/list.tsx`
 
 \`\`\`tsx
 import { useRequest } from '@/hooks/useRequest';
@@ -339,48 +399,28 @@ run({ page: 1, pageSize: 10 });
 return <Table loading={loading} dataSource={data?.list} />;
 };
 \`\`\`
-
----
-
-### useMyCustomHook（使用 1 次）
-
-**定义**（来自 `src/hooks/useMyCustomHook.ts`）：
-
-\`\`\`tsx
-export function useMyCustomHook(options: Options) {
-const [state, setState] = useState(initialState);
-// ... 完整实现
-}
-\`\`\`
-
-**使用示例**（来自 `src/pages/special/index.tsx`）：
-
-\`\`\`tsx
-import { useMyCustomHook } from '@/hooks/useMyCustomHook';
-
-const SpecialPage = () => {
-const result = useMyCustomHook({ option1: 'value1' });
-return <div>{result.data}</div>;
-};
-\`\`\`
 ```
 
-#### 规则 4：接口定义和调用示例
+##### API 文档模板
+
+文件路径：`docs/apis/user.md`
 
 ```markdown
-## API 接口使用示例
-
-### user 服务模块
+# user 接口模块
 
 **定义位置**：`src/service/user.ts`
 
-**接口列表**：
+## 接口列表
 
-- `userListPost` - 获取用户列表（使用 15 次）
-- `userDetailGet` - 获取用户详情（使用 8 次）
-- `userCreatePost` - 创建用户（使用 3 次）
+| 接口           | 说明         | 使用次数 |
+| -------------- | ------------ | -------- |
+| userListPost   | 获取用户列表 | 15       |
+| userDetailGet  | 获取用户详情 | 8        |
+| userCreatePost | 创建用户     | 3        |
 
-**代码示例**（来自 `src/service/user.ts`）：
+## 接口定义
+
+**来源**：`src/service/user.ts`
 
 \`\`\`typescript
 import request from '@/service/request';
@@ -392,9 +432,20 @@ method: 'POST',
 data: params,
 });
 }
+
+export function userDetailGet(id: number) {
+return request({
+url: `/api/user/detail/${id}`,
+method: 'GET',
+});
+}
 \`\`\`
 
-**调用示例**（来自 `src/pages/user/list.tsx`）：
+## 使用示例
+
+### userListPost
+
+**来源**：`src/pages/user/list.tsx`
 
 \`\`\`tsx
 import { userListPost } from '@/service/user';
@@ -404,18 +455,89 @@ run({ page: 1, pageSize: 10 });
 \`\`\`
 ```
 
+#### 规则 3：生成总入口文档（DEV-GUIDE.md）
+
+**提供快速导航和项目概览，详细内容链接到独立文档。**
+
+```markdown
+# {项目名称} 开发手册
+
+> 本文档由 AI 自动分析生成，包含项目中所有组件、Hook 和接口的使用文档。
+> 生成时间：{生成时间}
+
+## 快速导航
+
+| 我想...          | 查看文档                     |
+| ---------------- | ---------------------------- |
+| 查看完整物资清单 | [inventory.md](inventory.md) |
+| 查找组件用法     | [components/](components/)   |
+| 查找 Hook 用法   | [hooks/](hooks/)             |
+| 查找接口用法     | [apis/](apis/)               |
+
+## 项目概览
+
+### 技术栈
+
+| 类别     | 技术            | 版本   |
+| -------- | --------------- | ------ |
+| 框架     | {React/Vue}     | {版本} |
+| UI 库    | {Ant Design}    | {版本} |
+| 状态管理 | {Redux/Zustand} | {版本} |
+| 构建工具 | {Vite/Webpack}  | {版本} |
+
+### 目录结构
+```
+
+src/
+├── components/ # 公共组件
+├── pages/ # 页面
+├── hooks/ # 自定义 Hooks
+├── service/ # API 接口
+├── store/ # 状态管理
+└── utils/ # 工具函数
+
+```
+
+## 常用组件速查
+
+| 组件             | 使用次数 | 文档                                 |
+| ---------------- | -------- | ------------------------------------ |
+| TableTemplatePro | 38       | [查看](components/TableTemplatePro.md) |
+| MyRareComponent  | 1        | [查看](components/MyRareComponent.md)  |
+
+## 常用 Hooks 速查
+
+| Hook            | 使用次数 | 文档                               |
+| --------------- | -------- | ---------------------------------- |
+| useRequest      | 45       | [查看](hooks/useRequest.md)         |
+| useMyCustomHook | 1        | [查看](hooks/useMyCustomHook.md)    |
+
+## 接口模块速查
+
+| 模块 | 接口数量 | 文档                    |
+| ---- | -------- | ----------------------- |
+| user | 3        | [查看](apis/user.md)    |
+| order| 5        | [查看](apis/order.md)   |
+
+---
+
+**详细文档请查看对应的独立文件。**
+```
+
 ### ⚠️ 禁止的做法
 
 - ❌ 使用预定义的章节列表（"如何新建页面"、"如何创建表单"）
 - ❌ 只输出高频组件，忽略低频组件
 - ❌ 用统计数字代替代码示例
 - ❌ 遗漏任何组件、库或 Hook
+- ❌ 所有内容塞到一个文件
 
 ### ✅ 正确的做法
 
 - ✅ 遍历物资清单中的每一项
-- ✅ 即使只使用 1 次的组件，也提供完整的使用示例
-- ✅ 章节结构由数据决定，而不是模板决定
+- ✅ 即使只使用 1 次的组件，也生成独立文档
+- ✅ 每个组件/Hook/API 都有独立的 Markdown 文件
+- ✅ 总入口文档提供导航链接
 - ✅ 所有代码示例从实际文件中提取，标注来源
 
 ---
@@ -452,4 +574,22 @@ run({ page: 1, pageSize: 10 });
 
 ## 输出
 
-输出文件命名：`DEV-GUIDE.md`（放在项目根目录）
+输出到项目的 `docs/` 目录：
+
+```
+docs/
+├── DEV-GUIDE.md         # 总入口文档
+├── inventory.md         # 完整物资清单（索引）
+├── components/          # 组件文档目录
+│   ├── TableTemplatePro.md
+│   ├── MyRareComponent.md
+│   └── ...
+├── hooks/              # Hook 文档目录
+│   ├── useRequest.md
+│   ├── useMyCustomHook.md
+│   └── ...
+└── apis/               # API 文档目录
+    ├── user.md
+    ├── order.md
+    └── ...
+```
