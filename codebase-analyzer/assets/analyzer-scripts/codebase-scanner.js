@@ -1,17 +1,16 @@
 #!/usr/bin/env node
 /**
- * Codebase Scanner - 代码库扫描分析脚本
+ * Codebase Scanner - 全量索引模式
  *
- * 用于大规模代码库的自动化分析，避免 AI Agent 逐个读取文件导致上下文溢出
+ * 暴力扫描项目中所有文件，提取所有 import 语句，生成完整的"项目物资清单"
+ * 不依赖任何预设关键词，数据驱动分析
  *
  * 使用方式：
  *   node codebase-scanner.js [options]
  *
  * 选项：
  *   --dir <path>        要扫描的目录，默认为当前目录
- *   --output <path>     输出文件路径，默认为 _codebase_analysis.json
- *   --batch-size <n>    每批处理的文件数，默认 20
- *   --batch-output      是否分批输出（用于多代理协作），默认 false
+ *   --output <path>     输出文件路径，默认为 /tmp/_codebase_analysis.json
  */
 
 const fs = require("fs");
@@ -21,9 +20,7 @@ const path = require("path");
 const args = process.argv.slice(2);
 const options = {
   dir: ".",
-  output: "_codebase_analysis.json",
-  batchSize: 20,
-  batchOutput: false,
+  output: "/tmp/_codebase_analysis.json",
 };
 
 for (let i = 0; i < args.length; i++) {
@@ -34,17 +31,11 @@ for (let i = 0; i < args.length; i++) {
     case "--output":
       options.output = args[++i];
       break;
-    case "--batch-size":
-      options.batchSize = parseInt(args[++i], 10);
-      break;
-    case "--batch-output":
-      options.batchOutput = true;
-      break;
   }
 }
 
-// 排除的目录和文件
-const EXCLUDE_DIRS = [
+// 排除的目录
+const EXCLUDE_DIRS = new Set([
   "node_modules",
   "dist",
   "build",
@@ -60,9 +51,12 @@ const EXCLUDE_DIRS = [
   "venv",
   ".venv",
   "env",
-];
+  ".umi",
+  ".umi-production",
+]);
 
-const EXCLUDE_FILES = [
+// 排除的文件模式
+const EXCLUDE_FILE_PATTERNS = [
   /\.min\.js$/,
   /\.bundle\.js$/,
   /\.map$/,
@@ -70,314 +64,363 @@ const EXCLUDE_FILES = [
   /package-lock\.json$/,
   /yarn\.lock$/,
   /pnpm-lock\.yaml$/,
+  /\.d\.ts$/, // 类型声明文件通常不包含使用示例
 ];
 
-// 支持的文件扩展名
-const CODE_EXTENSIONS = [
+// 代码文件扩展名
+const CODE_EXTENSIONS = new Set([
   ".ts",
   ".tsx",
   ".js",
   ".jsx",
   ".vue",
   ".svelte",
-  ".css",
-  ".scss",
-  ".less",
-  ".sass",
-  ".py",
-  ".go",
-  ".rs",
-  ".java",
-  ".kt",
-];
+]);
 
-const CONFIG_FILES = [
-  "package.json",
-  "tsconfig.json",
-  "vite.config.ts",
-  "vite.config.js",
-  "next.config.js",
-  "next.config.mjs",
-  "webpack.config.js",
-  ".eslintrc",
-  ".eslintrc.js",
-  ".eslintrc.json",
-  "eslint.config.js",
-  ".prettierrc",
-  ".prettierrc.js",
-  ".prettierrc.json",
-  "biome.json",
-  "tailwind.config.js",
-  "tailwind.config.ts",
-];
+// 样式文件扩展名
+const STYLE_EXTENSIONS = new Set([".css", ".scss", ".less", ".sass", ".styl"]);
 
-// 分析模式定义
-const PATTERNS = {
-  // React 组件形态
-  reactClass: /class\s+\w+\s+extends\s+(React\.)?Component/g,
-  reactFunction: /^(export\s+)?(default\s+)?function\s+[A-Z]\w*\s*\(/gm,
-  reactArrow:
-    /^(export\s+)?(const|let)\s+[A-Z]\w*\s*[=:]\s*(\([^)]*\)|[^=])*=>\s*[{(]/gm,
-  reactHooks: /use[A-Z]\w*\s*\(/g,
+// 配置文件扩展名
+const CONFIG_EXTENSIONS = new Set([".json", ".yaml", ".yml", ".toml"]);
 
-  // Vue 组件形态
-  vueOptionsApi:
-    /export\s+default\s*\{[\s\S]*?(data|methods|computed|watch)\s*[:(]/g,
-  vueCompositionApi: /defineComponent|<script\s+setup/g,
+// ============================================
+// 全量索引：提取所有 import 语句
+// ============================================
 
-  // 样式方案
-  styledComponents: /styled\.\w+`|styled\(\w+\)`/g,
-  emotionCss: /css`|@emotion\/css/g,
-  cssModules: /\.module\.(css|scss|less)$/,
-  tailwindClasses:
-    /className\s*=\s*["'`][^"'`]*(?:flex|grid|p-|m-|text-|bg-|border-|rounded)/g,
+/**
+ * 解析文件中的所有 import 语句
+ * 返回格式: [{ source: 'react', imports: ['useState', 'useEffect'], type: 'named' }, ...]
+ */
+function parseImports(content, filePath) {
+  const imports = [];
 
-  // 状态管理
-  reduxStore: /createStore|configureStore|createSlice/g,
-  zustandStore: /create\s*\(\s*\(set|useStore/g,
-  piniaStore: /defineStore/g,
-  mobxStore: /makeObservable|makeAutoObservable|@observable/g,
-  jotaiAtom: /atom\s*\(|useAtom/g,
+  // 1. ES6 named imports: import { X, Y } from 'source'
+  const namedImportRegex = /import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/g;
+  let match;
+  while ((match = namedImportRegex.exec(content)) !== null) {
+    const importedItems = match[1]
+      .split(",")
+      .map((item) => {
+        // 处理 as 别名: X as Y
+        const parts = item.trim().split(/\s+as\s+/);
+        return {
+          original: parts[0].trim(),
+          alias: parts[1]?.trim() || parts[0].trim(),
+        };
+      })
+      .filter((item) => item.original);
 
-  // 路由
-  reactRouter:
-    /BrowserRouter|createBrowserRouter|useNavigate|useParams|<Route/g,
-  vueRouter: /createRouter|useRouter|useRoute|<router-view/g,
-  nextRouter: /useRouter|next\/router|next\/navigation/g,
+    imports.push({
+      source: match[2],
+      imports: importedItems,
+      type: "named",
+      raw: match[0],
+    });
+  }
 
-  // API 调用
-  axiosImport: /import\s+.*axios|require\s*\(\s*['"]axios['"]\s*\)/g,
-  fetchCall: /fetch\s*\(/g,
-  reactQuery: /@tanstack\/react-query|useQuery|useMutation/g,
-  swrHook: /useSWR|swr/g,
+  // 2. Default imports: import X from 'source'
+  const defaultImportRegex =
+    /import\s+([A-Za-z_$][\w$]*)\s+from\s*['"]([^'"]+)['"]/g;
+  while ((match = defaultImportRegex.exec(content)) !== null) {
+    // 排除已经被 named import 匹配的（避免重复）
+    if (!match[0].includes("{")) {
+      imports.push({
+        source: match[2],
+        imports: [{ original: "default", alias: match[1] }],
+        type: "default",
+        raw: match[0],
+      });
+    }
+  }
 
-  // 导出方式
-  namedExport: /^export\s+(const|function|class|type|interface)\s+/gm,
-  defaultExport: /^export\s+default\s+/gm,
+  // 3. Namespace imports: import * as X from 'source'
+  const namespaceImportRegex =
+    /import\s*\*\s*as\s+(\w+)\s+from\s*['"]([^'"]+)['"]/g;
+  while ((match = namespaceImportRegex.exec(content)) !== null) {
+    imports.push({
+      source: match[2],
+      imports: [{ original: "*", alias: match[1] }],
+      type: "namespace",
+      raw: match[0],
+    });
+  }
 
-  // TypeScript 特性
-  typeAnnotation:
-    /:\s*(string|number|boolean|any|void|never|unknown|\w+\[\]|Array<|Promise<)/g,
-  interfaceDef: /^(export\s+)?interface\s+\w+/gm,
-  typeDef: /^(export\s+)?type\s+\w+\s*=/gm,
-};
+  // 4. Side effect imports: import 'source'
+  const sideEffectImportRegex = /import\s*['"]([^'"]+)['"]\s*;?/g;
+  while ((match = sideEffectImportRegex.exec(content)) !== null) {
+    // 排除已经被其他模式匹配的
+    if (
+      !match[0].includes("from") &&
+      !match[0].includes("{") &&
+      !match[0].includes("*")
+    ) {
+      imports.push({
+        source: match[1],
+        imports: [],
+        type: "side-effect",
+        raw: match[0],
+      });
+    }
+  }
 
-// 文件复杂度评估（用于动态批次大小）
-function estimateComplexity(content) {
-  const lines = content.split("\n").length;
-  const imports = (content.match(/^import\s+/gm) || []).length;
-  const functions = (
-    content.match(
-      /function\s+\w+|=>\s*[{(]|^\s*(async\s+)?(\w+)\s*\([^)]*\)\s*\{/gm,
-    ) || []
-  ).length;
+  // 5. Dynamic imports: import('source') 或 require('source')
+  const dynamicImportRegex = /(?:import|require)\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+  while ((match = dynamicImportRegex.exec(content)) !== null) {
+    imports.push({
+      source: match[1],
+      imports: [],
+      type: "dynamic",
+      raw: match[0],
+    });
+  }
 
-  // 简单评分：行数/100 + 导入数/10 + 函数数/5
-  return Math.ceil(lines / 100 + imports / 10 + functions / 5);
+  return imports;
 }
 
-// 扫描目录获取所有文件
+/**
+ * 提取文件中的组件使用（JSX 标签）
+ */
+function parseJSXComponents(content) {
+  const components = new Map();
+
+  // 匹配 JSX 组件标签: <ComponentName 或 <Component.SubComponent
+  const jsxRegex =
+    /<([A-Z][a-zA-Z0-9]*(?:\.[A-Z][a-zA-Z0-9]*)?)\s*(?:[^>]*?)(?:\/?>)/g;
+  let match;
+  while ((match = jsxRegex.exec(content)) !== null) {
+    const componentName = match[1];
+    components.set(componentName, (components.get(componentName) || 0) + 1);
+  }
+
+  return components;
+}
+
+/**
+ * 提取 Hooks 使用
+ */
+function parseHooksUsage(content) {
+  const hooks = new Map();
+
+  // 匹配 useXxx( 形式的 Hook 调用
+  const hooksRegex = /\b(use[A-Z][a-zA-Z0-9]*)\s*\(/g;
+  let match;
+  while ((match = hooksRegex.exec(content)) !== null) {
+    const hookName = match[1];
+    hooks.set(hookName, (hooks.get(hookName) || 0) + 1);
+  }
+
+  return hooks;
+}
+
+/**
+ * 提取样式类名使用
+ */
+function parseStyleClasses(content) {
+  const classes = new Map();
+
+  // className="xxx" 或 className='xxx'
+  const classNameRegex = /className\s*=\s*["']([^"']+)["']/g;
+  let match;
+  while ((match = classNameRegex.exec(content)) !== null) {
+    const classNames = match[1].split(/\s+/).filter((c) => c);
+    for (const className of classNames) {
+      classes.set(className, (classes.get(className) || 0) + 1);
+    }
+  }
+
+  // className={styles.xxx} (CSS Modules)
+  const cssModulesRegex = /className\s*=\s*\{?\s*styles\.(\w+)\s*\}?/g;
+  while ((match = cssModulesRegex.exec(content)) !== null) {
+    const className = `[CSS Module] ${match[1]}`;
+    classes.set(className, (classes.get(className) || 0) + 1);
+  }
+
+  return classes;
+}
+
+// ============================================
+// 文件扫描
+// ============================================
+
+function shouldExcludeFile(filePath) {
+  return EXCLUDE_FILE_PATTERNS.some((pattern) => pattern.test(filePath));
+}
+
 function scanDirectory(dir, files = []) {
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  if (!fs.existsSync(dir)) return files;
 
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
 
-    if (entry.isDirectory()) {
-      if (!EXCLUDE_DIRS.includes(entry.name)) {
-        scanDirectory(fullPath, files);
-      }
-    } else if (entry.isFile()) {
-      const ext = path.extname(entry.name);
-      const isExcluded = EXCLUDE_FILES.some((pattern) =>
-        pattern.test(entry.name),
-      );
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
 
-      if (
-        !isExcluded &&
-        (CODE_EXTENSIONS.includes(ext) || CONFIG_FILES.includes(entry.name))
-      ) {
-        files.push(fullPath);
+      if (entry.isDirectory()) {
+        if (!EXCLUDE_DIRS.has(entry.name)) {
+          scanDirectory(fullPath, files);
+        }
+      } else if (entry.isFile()) {
+        const ext = path.extname(entry.name);
+        if (
+          (CODE_EXTENSIONS.has(ext) || STYLE_EXTENSIONS.has(ext)) &&
+          !shouldExcludeFile(entry.name)
+        ) {
+          files.push(fullPath);
+        }
       }
     }
+  } catch (e) {
+    console.error(`Error scanning ${dir}: ${e.message}`);
   }
 
   return files;
 }
 
-// 分析单个文件
-function analyzeFile(filePath) {
+// ============================================
+// 主分析逻辑
+// ============================================
+
+function analyzeFile(filePath, rootDir) {
   const content = fs.readFileSync(filePath, "utf-8");
+  const relativePath = path.relative(rootDir, filePath);
   const ext = path.extname(filePath);
-  const fileName = path.basename(filePath);
-  const relativePath = path.relative(options.dir, filePath);
+  const lines = content.split("\n").length;
 
   const result = {
     path: relativePath,
     extension: ext,
-    lines: content.split("\n").length,
-    complexity: estimateComplexity(content),
-    patterns: {},
+    lines,
+    imports: [],
+    jsxComponents: {},
+    hooks: {},
+    styleClasses: {},
   };
 
-  // 根据文件类型选择性分析
-  if ([".ts", ".tsx", ".js", ".jsx"].includes(ext)) {
-    // JavaScript/TypeScript 文件
-    for (const [name, pattern] of Object.entries(PATTERNS)) {
-      const matches = content.match(pattern);
-      if (matches && matches.length > 0) {
-        result.patterns[name] = matches.length;
-      }
-    }
+  // 只对代码文件进行详细分析
+  if (CODE_EXTENSIONS.has(ext)) {
+    // 提取所有 import
+    result.imports = parseImports(content, filePath);
 
-    // 提取导入的包
-    const imports = content.match(/from\s+['"]([^'"]+)['"]/g) || [];
-    result.imports = imports.map((m) => m.replace(/from\s+['"]|['"]/g, ""));
-  } else if (ext === ".vue") {
-    // Vue 文件
-    const scriptMatch = content.match(/<script[^>]*>([\s\S]*?)<\/script>/);
-    if (scriptMatch) {
-      const scriptContent = scriptMatch[1];
-      for (const [name, pattern] of Object.entries(PATTERNS)) {
-        const matches = scriptContent.match(pattern);
-        if (matches && matches.length > 0) {
-          result.patterns[name] = matches.length;
-        }
-      }
-    }
-  } else if ([".css", ".scss", ".less"].includes(ext)) {
-    // 样式文件
-    result.patterns.cssRules = (content.match(/\{[^}]+\}/g) || []).length;
-    result.patterns.cssVariables = (content.match(/--[\w-]+:/g) || []).length;
-  } else if (fileName === "package.json") {
-    // package.json 特殊处理
-    try {
-      const pkg = JSON.parse(content);
-      result.packageInfo = {
-        name: pkg.name,
-        dependencies: Object.keys(pkg.dependencies || {}),
-        devDependencies: Object.keys(pkg.devDependencies || {}),
-      };
-    } catch (e) {
-      result.parseError = true;
-    }
+    // 提取 JSX 组件使用
+    const jsxComponents = parseJSXComponents(content);
+    result.jsxComponents = Object.fromEntries(jsxComponents);
+
+    // 提取 Hooks 使用
+    const hooks = parseHooksUsage(content);
+    result.hooks = Object.fromEntries(hooks);
+
+    // 提取样式类名
+    const styleClasses = parseStyleClasses(content);
+    result.styleClasses = Object.fromEntries(styleClasses);
   }
 
   return result;
 }
 
-// 汇总分析结果
 function aggregateResults(fileResults) {
   const summary = {
     totalFiles: fileResults.length,
     totalLines: 0,
     byExtension: {},
     byDirectory: {},
-    patterns: {},
-    technologies: {
-      framework: null,
-      styleMethod: [],
-      stateManagement: [],
-      routing: null,
-      apiClient: [],
-    },
-    anomalies: [],
+
+    // 全量索引结果
+    importSources: {}, // 所有导入来源及其使用次数
+    importedItems: {}, // 所有导入项及其使用次数
+    jsxComponents: {}, // 所有 JSX 组件及其使用次数
+    hooks: {}, // 所有 Hooks 及其使用次数
+    styleClasses: {}, // 所有样式类名及其使用次数
+
+    // 每个导入项的使用位置（用于 S2 查找范例）
+    importUsageMap: {}, // { 'TableTemplatePro': ['src/pages/a.tsx', 'src/pages/b.tsx', ...] }
+    componentUsageMap: {}, // { 'Modal': ['src/pages/a.tsx', ...] }
+    hookUsageMap: {}, // { 'useRequest': ['src/pages/a.tsx', ...] }
   };
 
   for (const file of fileResults) {
-    // 统计行数
+    // 基础统计
     summary.totalLines += file.lines;
-
-    // 按扩展名统计
     summary.byExtension[file.extension] =
       (summary.byExtension[file.extension] || 0) + 1;
 
-    // 按目录统计
-    const dir = path.dirname(file.path).split(path.sep)[0] || ".";
-    summary.byDirectory[dir] = (summary.byDirectory[dir] || 0) + 1;
+    const topDir = file.path.split(path.sep)[0] || ".";
+    summary.byDirectory[topDir] = (summary.byDirectory[topDir] || 0) + 1;
 
-    // 汇总模式统计
-    for (const [pattern, count] of Object.entries(file.patterns || {})) {
-      summary.patterns[pattern] = (summary.patterns[pattern] || 0) + count;
+    // 汇总 imports
+    for (const imp of file.imports) {
+      // 统计导入来源
+      summary.importSources[imp.source] =
+        (summary.importSources[imp.source] || 0) + 1;
+
+      // 统计每个导入项
+      for (const item of imp.imports) {
+        const key = `${item.alias} (from ${imp.source})`;
+        summary.importedItems[key] = (summary.importedItems[key] || 0) + 1;
+
+        // 记录使用位置
+        if (!summary.importUsageMap[key]) {
+          summary.importUsageMap[key] = [];
+        }
+        if (!summary.importUsageMap[key].includes(file.path)) {
+          summary.importUsageMap[key].push(file.path);
+        }
+      }
     }
 
-    // 提取 package.json 信息
-    if (file.packageInfo) {
-      summary.packageInfo = file.packageInfo;
+    // 汇总 JSX 组件
+    for (const [comp, count] of Object.entries(file.jsxComponents)) {
+      summary.jsxComponents[comp] = (summary.jsxComponents[comp] || 0) + count;
+
+      if (!summary.componentUsageMap[comp]) {
+        summary.componentUsageMap[comp] = [];
+      }
+      if (!summary.componentUsageMap[comp].includes(file.path)) {
+        summary.componentUsageMap[comp].push(file.path);
+      }
+    }
+
+    // 汇总 Hooks
+    for (const [hook, count] of Object.entries(file.hooks)) {
+      summary.hooks[hook] = (summary.hooks[hook] || 0) + count;
+
+      if (!summary.hookUsageMap[hook]) {
+        summary.hookUsageMap[hook] = [];
+      }
+      if (!summary.hookUsageMap[hook].includes(file.path)) {
+        summary.hookUsageMap[hook].push(file.path);
+      }
+    }
+
+    // 汇总样式类名
+    for (const [cls, count] of Object.entries(file.styleClasses)) {
+      summary.styleClasses[cls] = (summary.styleClasses[cls] || 0) + count;
     }
   }
 
-  // 推断技术栈
-  const p = summary.patterns;
+  // 按使用次数排序
+  const sortByCount = (obj) => {
+    return Object.entries(obj)
+      .sort((a, b) => b[1] - a[1])
+      .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {});
+  };
 
-  // 框架推断
-  if (p.reactHooks > 0 || p.reactFunction > 0 || p.reactArrow > 0) {
-    summary.technologies.framework = "React";
-  } else if (p.vueOptionsApi > 0 || p.vueCompositionApi > 0) {
-    summary.technologies.framework = "Vue";
-  }
-
-  // 样式方案推断
-  if (p.tailwindClasses > 0) summary.technologies.styleMethod.push("Tailwind");
-  if (p.styledComponents > 0)
-    summary.technologies.styleMethod.push("Styled-Components");
-  if (p.emotionCss > 0) summary.technologies.styleMethod.push("Emotion");
-  if (
-    summary.byExtension[".module.css"] > 0 ||
-    summary.byExtension[".module.scss"] > 0
-  ) {
-    summary.technologies.styleMethod.push("CSS Modules");
-  }
-
-  // 状态管理推断
-  if (p.reduxStore > 0) summary.technologies.stateManagement.push("Redux");
-  if (p.zustandStore > 0) summary.technologies.stateManagement.push("Zustand");
-  if (p.piniaStore > 0) summary.technologies.stateManagement.push("Pinia");
-  if (p.mobxStore > 0) summary.technologies.stateManagement.push("MobX");
-  if (p.jotaiAtom > 0) summary.technologies.stateManagement.push("Jotai");
-
-  // 路由推断
-  if (p.nextRouter > 0) summary.technologies.routing = "Next.js Router";
-  else if (p.reactRouter > 0) summary.technologies.routing = "React Router";
-  else if (p.vueRouter > 0) summary.technologies.routing = "Vue Router";
-
-  // API 客户端推断
-  if (p.axiosImport > 0) summary.technologies.apiClient.push("Axios");
-  if (p.fetchCall > 0) summary.technologies.apiClient.push("Fetch");
-  if (p.reactQuery > 0) summary.technologies.apiClient.push("React Query");
-  if (p.swrHook > 0) summary.technologies.apiClient.push("SWR");
-
-  // 检测异常（多方案混用）
-  if (summary.technologies.styleMethod.length > 1) {
-    summary.anomalies.push({
-      type: "multiple_style_methods",
-      message: `检测到多种样式方案混用: ${summary.technologies.styleMethod.join(", ")}`,
-      severity: "warning",
-    });
-  }
-
-  if (summary.technologies.stateManagement.length > 1) {
-    summary.anomalies.push({
-      type: "multiple_state_management",
-      message: `检测到多种状态管理方案混用: ${summary.technologies.stateManagement.join(", ")}`,
-      severity: "warning",
-    });
-  }
-
-  if (p.reactClass > 0 && (p.reactFunction > 0 || p.reactHooks > 0)) {
-    summary.anomalies.push({
-      type: "mixed_component_styles",
-      message: `检测到类组件和函数组件混用 (类组件: ${p.reactClass}, 函数组件: ${(p.reactFunction || 0) + (p.reactArrow || 0)})`,
-      severity: "info",
-    });
-  }
+  summary.importSources = sortByCount(summary.importSources);
+  summary.importedItems = sortByCount(summary.importedItems);
+  summary.jsxComponents = sortByCount(summary.jsxComponents);
+  summary.hooks = sortByCount(summary.hooks);
 
   return summary;
 }
 
+// ============================================
 // 主函数
+// ============================================
+
 function main() {
-  console.log(`Scanning directory: ${path.resolve(options.dir)}`);
+  console.log(`=== Codebase Scanner (全量索引模式) ===`);
+  console.log(`Scanning: ${path.resolve(options.dir)}`);
+  console.log(`Output: ${options.output}`);
+  console.log();
 
   // 扫描文件
   const files = scanDirectory(options.dir);
@@ -388,111 +431,62 @@ function main() {
     process.exit(0);
   }
 
-  // 分析文件
+  // 分析每个文件
   const fileResults = [];
-  const batches = [];
-  let currentBatch = [];
-  let currentComplexity = 0;
-  const maxBatchComplexity = options.batchSize * 3; // 动态批次：基于复杂度
-
   for (let i = 0; i < files.length; i++) {
-    const result = analyzeFile(files[i]);
-    fileResults.push(result);
-
-    if (options.batchOutput) {
-      currentBatch.push(result);
-      currentComplexity += result.complexity;
-
-      // 动态批次大小：基于复杂度或文件数
-      if (
-        currentComplexity >= maxBatchComplexity ||
-        currentBatch.length >= options.batchSize
-      ) {
-        batches.push({
-          batchIndex: batches.length,
-          files: currentBatch,
-          summary: aggregateResults(currentBatch),
-        });
-        currentBatch = [];
-        currentComplexity = 0;
-      }
+    try {
+      const result = analyzeFile(files[i], options.dir);
+      fileResults.push(result);
+    } catch (e) {
+      console.error(`Error analyzing ${files[i]}: ${e.message}`);
     }
 
     // 进度显示
-    if ((i + 1) % 50 === 0) {
+    if ((i + 1) % 100 === 0) {
       console.log(`Analyzed ${i + 1}/${files.length} files...`);
     }
   }
 
-  // 处理剩余文件
-  if (options.batchOutput && currentBatch.length > 0) {
-    batches.push({
-      batchIndex: batches.length,
-      files: currentBatch,
-      summary: aggregateResults(currentBatch),
-    });
-  }
+  // 汇总结果
+  const summary = aggregateResults(fileResults);
 
-  // 生成最终输出
+  // 生成输出
   const output = {
     scanTime: new Date().toISOString(),
     rootDir: path.resolve(options.dir),
-    totalFiles: files.length,
-    summary: aggregateResults(fileResults),
+    summary,
+    files: fileResults, // 包含每个文件的详细信息，供 S2 使用
   };
 
-  if (options.batchOutput) {
-    // 分批输出模式：输出多个文件
-    const outputDir = path.dirname(options.output);
-    const outputBase = path.basename(options.output, ".json");
+  // 写入文件
+  fs.writeFileSync(options.output, JSON.stringify(output, null, 2));
 
-    for (const batch of batches) {
-      const batchFile = path.join(
-        outputDir,
-        `${outputBase}_batch_${batch.batchIndex}.json`,
-      );
-      fs.writeFileSync(batchFile, JSON.stringify(batch, null, 2));
-      console.log(`Written batch ${batch.batchIndex} to ${batchFile}`);
-    }
+  // 打印摘要
+  console.log(`\n=== 扫描完成 ===`);
+  console.log(`总文件数: ${summary.totalFiles}`);
+  console.log(`总代码行数: ${summary.totalLines}`);
+  console.log(`\n导入来源 TOP 20:`);
+  Object.entries(summary.importSources)
+    .slice(0, 20)
+    .forEach(([source, count]) => {
+      console.log(`  ${source}: ${count} 次`);
+    });
 
-    // 输出汇总文件
-    output.batches = batches.map((b) => ({
-      batchIndex: b.batchIndex,
-      fileCount: b.files.length,
-      summary: b.summary,
-    }));
-    fs.writeFileSync(options.output, JSON.stringify(output, null, 2));
-    console.log(`Written summary to ${options.output}`);
-  } else {
-    // 单文件输出模式
-    output.files = fileResults;
-    fs.writeFileSync(options.output, JSON.stringify(output, null, 2));
-    console.log(`Written analysis to ${options.output}`);
-  }
+  console.log(`\nJSX 组件 TOP 20:`);
+  Object.entries(summary.jsxComponents)
+    .slice(0, 20)
+    .forEach(([comp, count]) => {
+      console.log(`  <${comp}>: ${count} 次`);
+    });
 
-  // 输出简要统计
-  console.log("\n=== Analysis Summary ===");
-  console.log(`Total files: ${output.summary.totalFiles}`);
-  console.log(`Total lines: ${output.summary.totalLines}`);
-  console.log(
-    `Framework: ${output.summary.technologies.framework || "Unknown"}`,
-  );
-  console.log(
-    `Style methods: ${output.summary.technologies.styleMethod.join(", ") || "None detected"}`,
-  );
-  console.log(
-    `State management: ${output.summary.technologies.stateManagement.join(", ") || "None detected"}`,
-  );
-  console.log(
-    `Routing: ${output.summary.technologies.routing || "None detected"}`,
-  );
+  console.log(`\nHooks TOP 20:`);
+  Object.entries(summary.hooks)
+    .slice(0, 20)
+    .forEach(([hook, count]) => {
+      console.log(`  ${hook}(): ${count} 次`);
+    });
 
-  if (output.summary.anomalies.length > 0) {
-    console.log("\n=== Anomalies Detected ===");
-    for (const anomaly of output.summary.anomalies) {
-      console.log(`[${anomaly.severity.toUpperCase()}] ${anomaly.message}`);
-    }
-  }
+  console.log(`\n输出文件: ${options.output}`);
 }
 
 main();

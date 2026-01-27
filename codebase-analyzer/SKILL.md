@@ -207,82 +207,115 @@ find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx"
 2. **禁止在项目目录创建任何文件** - 所有输出必须写入 `/tmp/` 目录
 3. **执行完成后检查** - 确保项目目录没有新增任何 `_*.js` 或 `_*.json` 文件
 
-### 阶段 S1：执行定量分析脚本
+### 阶段 S1：全量索引（Exhaustive Indexing）
 
-使用预定义的分析脚本进行批量统计。
+**不依赖任何预设关键词**，暴力扫描所有文件，提取所有 import 语句，生成完整的"项目物资清单"。
 
 #### 执行命令（直接从原位置执行，禁止复制脚本）
 
 ```bash
 # ✅ 正确：直接从原位置执行
-node ~/.claude/skills/codebase-analyzer/assets/analyzer-scripts/codebase-scanner.js --dir src --output /tmp/_codebase_analysis.json --batch-output
+node ~/.claude/skills/codebase-analyzer/assets/analyzer-scripts/codebase-scanner.js --dir . --output /tmp/_codebase_analysis.json
 
 # ❌ 错误：不要复制脚本到项目目录
 # cp ~/.claude/skills/.../codebase-scanner.js ./_codebase_scanner.js  ← 禁止
 ```
 
-如果没有 `src` 目录：
-
-```bash
-node ~/.claude/skills/codebase-analyzer/assets/analyzer-scripts/codebase-scanner.js --dir . --output /tmp/_codebase_analysis.json --batch-output
-```
-
-#### 步骤 1.2：读取分析结果
-
-**只读取脚本输出的 JSON 结果**，不要打开源代码文件。
+#### 读取分析结果
 
 ```bash
 cat /tmp/_codebase_analysis.json
 ```
 
-脚本输出包含：
+#### 全量索引输出内容
 
-- `totalFiles`：总文件数
-- `totalLines`：总行数
-- `byExtension`：按扩展名统计
-- `byDirectory`：按目录统计
-- `patterns`：检测到的模式统计（组件形态、样式方案、状态管理等）
-- `technologies`：推断的技术栈
-- `anomalies`：检测到的异常（多方案混用等）
+脚本会**无差别扫描**所有文件，输出完整的物资清单：
 
-### 阶段 S2：提取开发模式（核心步骤）
+| 字段                | 说明                       | 示例                                                                    |
+| ------------------- | -------------------------- | ----------------------------------------------------------------------- |
+| `importSources`     | 所有导入来源及使用次数     | `{ "antd": 156, "@/components/TableTemplatePro": 38 }`                  |
+| `importedItems`     | 所有导入项及使用次数       | `{ "Form (from antd)": 115, "MyRareComponent (from @/components)": 1 }` |
+| `jsxComponents`     | 所有 JSX 组件及使用次数    | `{ "Table": 89, "MyCustomList": 3 }`                                    |
+| `hooks`             | 所有 Hooks 及使用次数      | `{ "useState": 234, "useMyCustomHook": 5 }`                             |
+| `componentUsageMap` | 每个组件在哪些文件中使用   | `{ "TableTemplatePro": ["src/pages/a.tsx", "src/pages/b.tsx"] }`        |
+| `hookUsageMap`      | 每个 Hook 在哪些文件中使用 | `{ "useRequest": ["src/pages/a.tsx", ...] }`                            |
 
-**这是生成实操手册的关键步骤。** 按开发场景提取完整的代码示例，而不是统计数据。
+**关键点**：即使一个组件只被使用 1 次，也会被完整记录。
+
+### 阶段 S2：自适应模式提取（数据驱动）
+
+**根据 S1 的全量索引结果，自适应地提取代码示例。**
+
+不是我（Agent）在猜项目用了什么，而是**数据告诉我是什么**。
 
 #### 执行命令（直接从原位置执行，禁止复制脚本）
 
 ```bash
-# ✅ 正确：直接从原位置执行
-node ~/.claude/skills/codebase-analyzer/assets/analyzer-scripts/pattern-extractor.js --dir . --output /tmp/_dev_patterns.json
+# ✅ 正确：直接从原位置执行，必须指定 --analysis 参数
+node ~/.claude/skills/codebase-analyzer/assets/analyzer-scripts/pattern-extractor.js --dir . --analysis /tmp/_codebase_analysis.json --output /tmp/_dev_patterns.json
 
 # ❌ 错误：不要复制脚本到项目目录
 # cp ~/.claude/skills/.../pattern-extractor.js ./_pattern_extractor.js  ← 禁止
 ```
 
-#### 步骤 2.2：读取模式提取结果
+#### 读取模式提取结果
 
 ```bash
 cat /tmp/_dev_patterns.json
 ```
 
-脚本会按以下**开发场景**提取**完整代码示例**：
+#### 自适应提取逻辑
 
-| 场景           | 提取内容                        | 用途               |
-| -------------- | ------------------------------- | ------------------ |
-| **页面开发**   | 完整的页面组件代码              | 新建页面时参考     |
-| **组件开发**   | Props 定义 + 组件实现           | 新建组件时参考     |
-| **表单开发**   | Form.useForm + Form.Item 结构   | 创建表单时参考     |
-| **表格开发**   | columns 定义 + Table 配置       | 创建表格时参考     |
-| **接口定义**   | Service 文件结构                | 定义新接口时参考   |
-| **接口调用**   | useEffect + API 调用 + 错误处理 | 调用接口时参考     |
-| **样式编写**   | LESS/SCSS 文件结构              | 写样式时参考       |
-| **路由配置**   | routes.ts 配置示例              | 添加路由时参考     |
-| **状态管理**   | Store 定义 + useSelector 使用   | 使用全局状态时参考 |
-| **弹窗开发**   | Modal/Drawer 完整示例           | 创建弹窗时参考     |
-| **Hooks 使用** | 自定义 Hook 定义                | 编写 Hook 时参考   |
-| **类型定义**   | interface/type 定义             | 定义类型时参考     |
+S2 脚本会读取 S1 的物资清单，**根据实际数据决定提取什么**：
 
-**每个场景提取 1-3 个最佳实践文件的完整代码。**
+| S1 发现                       | S2 动作                                          |
+| ----------------------------- | ------------------------------------------------ |
+| `TableTemplatePro` 使用 38 次 | 找使用 `TableTemplatePro` 的文件作为"列表页范例" |
+| `MyCustomForm` 使用 5 次      | 提取 `MyCustomForm` 的使用示例                   |
+| `useMyRareHook` 只使用 1 次   | **也会提取**这唯一一次使用的示例                 |
+
+#### 输出内容
+
+```json
+{
+  "inventory": {
+    "importSources": { ... },   // 完整物资清单
+    "jsxComponents": { ... },
+    "hooks": { ... }
+  },
+  "developmentScenarios": {
+    "listPage": {
+      "name": "列表页开发",
+      "description": "使用 TableTemplatePro 的列表页示例",
+      "component": "TableTemplatePro",
+      "example": {
+        "filePath": "src/pages/user/list.tsx",
+        "code": { "fullContent": "完整代码..." }
+      }
+    },
+    "formPage": { ... },
+    "modalUsage": { ... },
+    "apiUsage": { ... },
+    "serviceDefinition": { ... },
+    "routeConfig": { ... },
+    "styleWriting": { ... },
+    "customHook": { ... }
+  },
+  "categories": {
+    "customComponents": {
+      "items": [
+        {
+          "name": "MyRareComponent",
+          "count": 1,
+          "examples": [{ "filePath": "...", "code": "..." }]
+        }
+      ]
+    }
+  }
+}
+```
+
+**关键点**：每个组件/库，无论使用频率高低，都会有对应的使用示例。
 
 ### 阶段 S3：多代理协作深度分析（可选）
 
